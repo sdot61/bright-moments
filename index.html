@@ -49,7 +49,6 @@ footer{text-align:center;padding:30px;font-size:11px;letter-spacing:.18em;text-t
 <button type="button" class="tab" data-category="coasters" aria-selected="false">Coasters</button>
 <button type="button" class="tab" data-category="mirrors" aria-selected="false">Mirrors</button>
 </nav>
-<p class="counter" id="counter" aria-live="polite">4 pieces</p>
 <section class="gallery" id="gallery" aria-label="Available mosaics"></section>
 </main>
 <footer>Bright Moments &middot; Handmade mosaics</footer>
@@ -63,7 +62,6 @@ const products=[
  {id:"IMG_9431",name:"Mosaic Mirror",category:"mirrors",price:null,checkout:null}
 ];
 const gallery=document.getElementById("gallery");
-const counter=document.getElementById("counter");
 const tabs=[...document.querySelectorAll(".tab")];
 function itemImage(id){
   // Images can be placed at the repository root or inside an images folder.
@@ -80,7 +78,6 @@ function setImageFallback(img,paths,i=0){
 function render(category="all"){
   const visible=products.filter(p=>category==="all"||p.category===category);
   tabs.forEach(t=>t.setAttribute("aria-selected",String(t.dataset.category===category)));
-  counter.textContent=visible.length+" "+(visible.length===1?"piece":"pieces");
   gallery.replaceChildren();
   for(const p of visible){
     const card=document.createElement("article");card.className="product";
