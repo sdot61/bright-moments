@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bright Moments — Mosaic Shop</title>
+<meta name="description" content="Bright Moments — handcrafted mosaic art, coasters and mirrors.">
+<style>
+:root{--ink:#161412;--red:#853e37;--wine:#532a2a;--yellow:#d6b85a;--cream:#f8f4ed}
+*{box-sizing:border-box}
+html{background:#fff}
+body{margin:0;background:#fff;color:var(--ink);font-family:Arial,Helvetica,sans-serif}
+header{text-align:center;padding:64px 22px 38px}
+.logo{margin:0;font-family:Arial Black,Arial,Helvetica,sans-serif;font-size:clamp(3.2rem,9.4vw,8.4rem);font-weight:900;line-height:.92;letter-spacing:-.075em;text-transform:lowercase}
+.subtitle{margin:18px 0 0;letter-spacing:.25em;font-size:11px;font-weight:700;text-transform:uppercase}
+main{max-width:1320px;padding:0 30px 90px;margin:auto}
+nav{display:flex;justify-content:center;flex-wrap:wrap;gap:7px;margin:8px auto 40px}
+.tab{min-width:81px;border:1px solid transparent;padding:10px 15px;font-size:11px;line-height:1;letter-spacing:.11em;text-transform:uppercase;font-weight:700;cursor:pointer;transition:transform .15s,box-shadow .15s;outline-offset:4px}
+.tab:hover{transform:translateY(-2px)}
+.tab[aria-selected="true"]{box-shadow:0 0 0 2px #161412;transform:translateY(-2px)}
+.tab[data-category="all"]{background:#242323;color:#fff}
+.tab[data-category="art"]{background:#833f39;color:#fff}
+.tab[data-category="coasters"]{background:#d7b85f;color:#171411}
+.tab[data-category="mirrors"]{background:#512d30;color:#fff}
+.counter{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:#756c65;text-align:center;margin:0 0 24px}
+.gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:52px 24px}
+.product{min-width:0}
+.photo{aspect-ratio:4/5;background:#f6f4f0;display:grid;place-items:center;overflow:hidden}
+.photo img{width:100%;height:100%;object-fit:cover;display:block}
+.fallback{display:none;padding:20px;color:#887b72;text-align:center;font-size:12px;line-height:1.7}
+.photo.missing img{display:none}
+.photo.missing .fallback{display:block}
+.product-info{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:14px 0 10px}
+.product-title{font-size:14px;font-weight:700;margin:0}
+.product-type{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#82786f}
+.buy{width:100%;border:1px solid #1c1715;background:#1c1715;color:white;display:block;padding:13px 10px;font-size:12px;font-weight:700;letter-spacing:.06em;cursor:pointer;text-align:center}
+.buy:hover{background:var(--red);border-color:var(--red)}
+footer{text-align:center;padding:30px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#6d615c}
+@media(max-width:800px){header{padding-top:45px}main{padding:0 18px 60px}.gallery{grid-template-columns:repeat(2,minmax(0,1fr));gap:35px 15px}.logo{letter-spacing:-.06em}nav{margin-bottom:28px}}
+@media(max-width:480px){.gallery{grid-template-columns:1fr;max-width:460px;margin:auto}.photo{aspect-ratio:1/1}.tab{min-width:auto;padding:10px 12px;font-size:10px}header{padding:38px 15px 30px}.logo{font-size:clamp(2.7rem,12vw,5rem)}}
+</style>
+</head>
+<body>
+<header><h1 class="logo">bright moments</h1><p class="subtitle">Mosaic art &amp; objects</p></header>
+<main>
+<nav aria-label="Shop categories">
+<button type="button" class="tab" data-category="all" aria-selected="true">All</button>
+<button type="button" class="tab" data-category="art" aria-selected="false">Art</button>
+<button type="button" class="tab" data-category="coasters" aria-selected="false">Coasters</button>
+<button type="button" class="tab" data-category="mirrors" aria-selected="false">Mirrors</button>
+</nav>
+<p class="counter" id="counter" aria-live="polite">4 pieces</p>
+<section class="gallery" id="gallery" aria-label="Available mosaics"></section>
+</main>
+<footer>Bright Moments &middot; Handmade mosaics</footer>
+<script>
+// Add new items here. Assign each one a category matching a tab.
+// Supply an actual price and checkout URL before accepting purchases.
+const products=[
+ {id:"IMG_9248",name:"Mosaic Coaster",category:"coasters",price:null,checkout:null},
+ {id:"IMG_9249",name:"Mosaic Artwork 01",category:"art",price:null,checkout:null},
+ {id:"IMG_9430",name:"Mosaic Artwork 02",category:"art",price:null,checkout:null},
+ {id:"IMG_9431",name:"Mosaic Mirror",category:"mirrors",price:null,checkout:null}
+];
+const gallery=document.getElementById("gallery");
+const counter=document.getElementById("counter");
+const tabs=[...document.querySelectorAll(".tab")];
+function itemImage(id){
+  // Images can be placed at the repository root or inside an images folder.
+  // Supported file types: jpg, jpeg, png, webp (case-sensitive on GitHub).
+  return ["images/"+id+".jpg","images/"+id+".JPG",id+".jpg",id+".JPG",
+          "images/"+id+".jpeg","images/"+id+".JPEG",id+".jpeg",id+".JPEG",
+          "images/"+id+".png",id+".png","images/"+id+".webp",id+".webp"];
+}
+function setImageFallback(img,paths,i=0){
+  if(i>=paths.length){img.parentElement.classList.add("missing");return}
+  img.onerror=()=>setImageFallback(img,paths,i+1);
+  img.src=paths[i];
+}
+function render(category="all"){
+  const visible=products.filter(p=>category==="all"||p.category===category);
+  tabs.forEach(t=>t.setAttribute("aria-selected",String(t.dataset.category===category)));
+  counter.textContent=visible.length+" "+(visible.length===1?"piece":"pieces");
+  gallery.replaceChildren();
+  for(const p of visible){
+    const card=document.createElement("article");card.className="product";
+    const photo=document.createElement("div");photo.className="photo";
+    const img=document.createElement("img");img.alt=p.name;img.loading="lazy";
+    const fallback=document.createElement("div");fallback.className="fallback";
+    fallback.textContent=p.id+" — image not yet uploaded";
+    photo.append(img,fallback);setImageFallback(img,itemImage(p.id));
+    const details=document.createElement("div");details.className="product-info";
+    const name=document.createElement("h2");name.className="product-title";name.textContent=p.name;
+    const kind=document.createElement("span");kind.className="product-type";kind.textContent=p.category;
+    details.append(name,kind);
+    const buy=document.createElement("button");buy.className="buy";buy.type="button";
+    buy.textContent=(p.price===null?"Price TBC":new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(p.price))+" · Buy";
+    buy.addEventListener("click",()=>{
+      if(p.checkout){location.href=p.checkout}
+      else alert("Checkout is not available yet for this piece.");
+    });
+    card.append(photo,details,buy);gallery.append(card);
+  }
+}
+tabs.forEach(tab=>{
+ tab.addEventListener("mouseenter",()=>render(tab.dataset.category));
+ tab.addEventListener("click",()=>render(tab.dataset.category));
+ tab.addEventListener("focus",()=>render(tab.dataset.category));
+});
+render();
+</script>
+</body>
+</html>
