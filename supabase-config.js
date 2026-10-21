@@ -1,5 +1,5 @@
-// Public Supabase project settings only. NEVER put service-role or secret keys here.
+// Public browser credentials only; never add service_role or database passwords.
 window.BRIGHT_MOMENTS_SUPABASE = {
-  url: "",
-  publishableKey: ""
+  url: "https://wxgqesprekuzgqhhimlz.supabase.co",
+  publishableKey: "sb_publishable_9zXYiFrIV0acHKEa5JkHDQ_HFIwa2Db"
 };
