@@ -1,7 +1,7 @@
 const cfg=window.BRIGHT_MOMENTS_SUPABASE||{};
 const $=id=>document.getElementById(id);
 const show=(id,on)=>$(id).hidden=!on;
-let client=null,photos=[],selected=new Set();
+let client=null,photos=[],selected=new Set(),viewSection="gallery",viewCategory="all";
 const say=(id,message)=>$(id).textContent=message;
 if(!cfg.url||!cfg.publishableKey){say('message','Setup pending: connect the Supabase project and add its public URL and publishable key to supabase-config.js.');$('signin').querySelector('button').disabled=true;}
 else{
@@ -49,7 +49,7 @@ photos=data||[];selected.clear();render();
 }
 function render(){
 const container=$('images');container.replaceChildren();
-for(const p of photos){
+for(const p of photos.filter(p=>p.section===viewSection&&(viewCategory==="all"||p.category===viewCategory))){
 const article=document.createElement('article');article.className='item';
 const photo=document.createElement('div');photo.className='photo';
 const img=document.createElement('img');img.src=url(p.file_path);img.alt=p.title;img.loading='lazy';
@@ -60,7 +60,7 @@ const title=document.createElement('h3');title.textContent=p.title;
 const meta=document.createElement('p');meta.textContent=p.section+' · '+p.category;
 article.append(photo,title,meta);container.append(article);
 }
-if(!photos.length)container.textContent='No managed photographs yet. Upload one above.';
+if(!container.children.length)container.textContent='No managed photographs in this selection yet.';
 }
 async function optimize(file){
 const bitmap=await createImageBitmap(file);
@@ -105,14 +105,15 @@ if(error)say('status',error.message);else await loadPhotos();
 async function moveSelected(direction){
 const chosen=photos.filter(p=>selected.has(p.id));
 if(chosen.length!==1){say('status','Select exactly one photograph to rearrange.');return;}
-const current=photos.findIndex(p=>p.id===chosen[0].id);
-const neighbor=current+direction;
-if(neighbor<0||neighbor>=photos.length)return;
-const a=photos[current],b=photos[neighbor];
-const first=await client.from('gallery_images').update({sort_order:neighbor*10}).eq('id',a.id);
-const second=await client.from('gallery_images').update({sort_order:current*10}).eq('id',b.id);
-if(first.error||second.error)say('status',(first.error||second.error).message);
-else{await loadPhotos();selected.add(a.id);render();}
+const same=photos.filter(p=>p.section===chosen[0].section&&p.category===chosen[0].category);
+const index=same.findIndex(p=>p.id===chosen[0].id),neighbor=index+direction;
+if(neighbor<0||neighbor>=same.length)return;
+[same[index],same[neighbor]]=[same[neighbor],same[index]];
+for(let i=0;i<same.length;i++){const {error}=await client.from('gallery_images').update({sort_order:i}).eq('id',same[i].id);if(error){say('status',error.message);return;}}
+await loadPhotos();selected.add(chosen[0].id);render();
 }
 $('earlier').addEventListener('click',()=>moveSelected(-1));
 $('later').addEventListener('click',()=>moveSelected(1));
+
+document.querySelectorAll('[data-section]').forEach(button=>{const change=()=>{viewSection=button.dataset.section;selected.clear();render()};button.addEventListener('mouseenter',change);button.addEventListener('click',change)});
+document.querySelectorAll('[data-category]').forEach(button=>{const change=()=>{viewCategory=button.dataset.category;selected.clear();render()};button.addEventListener('mouseenter',change);button.addEventListener('click',change)});
