@@ -14,7 +14,7 @@ const {data:{user}}=await client.auth.getUser();
 if(!user){show('login',true);show('editor',false);return;}
 const result=await client.from('site_admins').select('user_id').eq('user_id',user.id).maybeSingle();
 if(result.error||!result.data){say('message','This account is not authorized to manage Bright Moments.');show('editor',false);show('login',true);return;}
-show('login',false);show('editor',true);await loadPhotos();await updateImportButton();
+show('login',false);show('editor',true);await loadPhotos();
 }
 $('signin').addEventListener('submit',async e=>{
 e.preventDefault();if(!client)return;
@@ -41,7 +41,7 @@ say('message','Enter your new password.');
 }
 $('logout').addEventListener('click',async()=>{await client.auth.signOut();selected.clear();show('login',true);show('editor',false)});
 const bucket='bright-moments-images';
-function url(path){return client.storage.from(bucket).getPublicUrl(path).data.publicUrl;}
+function url(path){if(path.startsWith('github:'))return 'https://raw.githubusercontent.com/sdot61/bright-moments/main/'+path.slice(7).split('/').map(encodeURIComponent).join('/');return client.storage.from(bucket).getPublicUrl(path).data.publicUrl;}
 async function loadPhotos(){
 const {data,error}=await client.from('gallery_images').select('*').order('sort_order',{ascending:true}).order('created_at',{ascending:true});
 if(error){say('status',error.message);return;}
@@ -60,7 +60,7 @@ const title=document.createElement('h3');title.textContent=p.title;
 const meta=document.createElement('p');meta.textContent=p.section+' · '+p.category;
 article.append(photo,title,meta);container.append(article);
 }
-if(!container.children.length)container.textContent='No managed photographs in this selection yet.';
+if(!container.children.length)container.textContent='No photographs in this selection yet.';
 }
 async function optimize(file){
 const bitmap=await createImageBitmap(file);
@@ -88,7 +88,7 @@ const chosen=photos.filter(p=>selected.has(p.id));if(!chosen.length){say('status
 if(!confirm('Permanently delete '+chosen.length+' selected photograph(s)?'))return;
 const {error}=await client.from('gallery_images').delete().in('id',chosen.map(p=>p.id));
 if(error){say('status',error.message);return;}
-const {error:storageError}=await client.storage.from(bucket).remove(chosen.map(p=>p.file_path));
+const storagePaths=chosen.map(p=>p.file_path).filter(p=>!p.startsWith('github:'));const {error:storageError}=storagePaths.length?await client.storage.from(bucket).remove(storagePaths):{error:null};
 say('status',storageError?'Gallery entries deleted; storage cleanup failed: '+storageError.message:'Photographs deleted.');
 await loadPhotos();
 }
@@ -118,53 +118,3 @@ $('later').addEventListener('click',()=>moveSelected(1));
 document.querySelectorAll('[data-section]').forEach(button=>{const change=()=>{viewSection=button.dataset.section;selected.clear();render()};button.addEventListener('mouseenter',change);button.addEventListener('click',change)});
 document.querySelectorAll('[data-category]').forEach(button=>{const change=()=>{viewCategory=button.dataset.category;selected.clear();render()};button.addEventListener('mouseenter',change);button.addEventListener('click',change)});
 
-const githubTreeUrl='https://api.github.com/repos/sdot61/bright-moments/git/trees/main?recursive=1';
-$('importExisting').addEventListener('click',async()=>{
- if(!client)return;
- if(!confirm('Import the existing GitHub gallery photos into Bright Moments management? This may take several minutes. Leave this page open until it finishes.'))return;
- const button=$('importExisting');button.disabled=true;
- try{
-  say('status','Checking existing gallery photos…');
-  const treeResponse=await fetch(githubTreeUrl,{cache:'no-store'});
-  if(!treeResponse.ok)throw Error('Could not list GitHub photographs.');
-  const tree=await treeResponse.json();
-  if(tree.truncated)throw Error('The GitHub photo listing is incomplete.');
-  const paths=(tree.tree||[]).filter(f=>f.type==='blob'&&f.size>100&&/\.(jpe?g|png|webp|avif)$/i.test(f.path)).map(f=>{
-   const parts=f.path.split('/'),section=parts[0]?.toLowerCase(),category=parts[1]?.toLowerCase();
-   if(parts.length<3||!['gallery','store'].includes(section)||!['art','coasters','mirrors','jewelry'].includes(category))return null;
-   const title=parts[parts.length-1].replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ');
-   return {path:f.path,title,section,category};
-  }).filter(Boolean);
-  const {data:existing,error:existingError}=await client.from('gallery_images').select('title,section,category');
-  if(existingError)throw existingError;
-  const seen=new Set((existing||[]).map(p=>[p.section,p.category,p.title].join('|')));
-  let added=0;
-  for(let i=0;i<paths.length;i++){
-   const p=paths[i],key=[p.section,p.category,p.title].join('|');
-   if(seen.has(key))continue;
-   say('status','Importing photograph '+(i+1)+' of '+paths.length+': '+p.title);
-   const imageUrl='https://raw.githubusercontent.com/sdot61/bright-moments/main/'+p.path.split('/').map(encodeURIComponent).join('/');
-   const response=await fetch(imageUrl);
-   if(!response.ok)throw Error('Could not fetch '+p.path);
-   const original=await response.blob();
-   const optimized=await optimize(original);
-   const newPath=crypto.randomUUID()+'.jpg';
-   const {error:storageError}=await client.storage.from(bucket).upload(newPath,optimized,{contentType:'image/jpeg',upsert:false});
-   if(storageError)throw storageError;
-   const {error:dbError}=await client.from('gallery_images').insert({file_path:newPath,title:p.title,section:p.section,category:p.category,sort_order:i});
-   if(dbError){await client.storage.from(bucket).remove([newPath]);throw dbError;}
-   seen.add(key);added++;
-  }
-  const {error:stateError}=await client.from('gallery_settings').update({migrated:true}).eq('id',1);
-  if(stateError)throw stateError;
-  say('status','Import complete: '+added+' new photograph(s). The public gallery now uses the managed photographs.');
-  button.hidden=true;
-  await loadPhotos();
- }catch(error){say('status','Import incomplete: '+error.message+' You can retry; already imported photographs will be skipped. The public site still uses its original GitHub gallery until import completes.');}
- finally{button.disabled=false;}
-});
-async function updateImportButton(){
- if(!client)return;
- const {data}=await client.from('gallery_settings').select('migrated').eq('id',1).maybeSingle();
- $('importExisting').hidden=!!data?.migrated;
-}
