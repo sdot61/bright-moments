@@ -10,13 +10,13 @@ async function loadProducts(){
  if(!response.ok)throw Error("Repository listing unavailable");
  const data=await response.json();
  if(data.truncated)throw Error("Repository listing incomplete");
- const original=(data.tree||[]).filter(f=>f.type==="blob"&&f.size>100&&/\\.(jpe?g|png|webp|gif|avif)$/i.test(f.path))
+ const original=(data.tree||[]).filter(f=>f.type==="blob"&&f.size>100&&/\.(jpe?g|png|webp|gif|avif)$/i.test(f.path))
  .map(f=>{const parts=f.path.split("/");if(parts.length<3)return null;
  const section=parts[0].toLowerCase(),category=parts[1].toLowerCase();
  if(!["gallery","store"].includes(section)||!categoryNames.includes(category))return null;
  const filename=parts[parts.length-1];
  return {file:parts.map(encodeURIComponent).join("/"),
- title:filename.replace(/\\.[^.]+$/,"").replace(/[_-]+/g," "),category,section}
+ title:filename.replace(/\.[^.]+$/,"").replace(/[_-]+/g," "),category,section}
  }).filter(Boolean);
  const stored=managed?managed.photos:[];
  products=[...stored,...original.filter(p=>!stored.some(x=>x.section===p.section&&x.category===p.category&&x.title===p.title))];
