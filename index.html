@@ -34,7 +34,7 @@ async function loadManagedPhotos(){
  if(settings.error)throw settings.error;
  if(records.error)throw records.error;
  return {migrated:!!settings.data?.migrated,photos:(records.data||[]).map(p=>({
- file:client.storage.from("bright-moments-images").getPublicUrl(p.file_path).data.publicUrl,
+ file:p.file_path.startsWith("github:")?"https://raw.githubusercontent.com/sdot61/bright-moments/main/"+p.file_path.slice(7).split("/").map(encodeURIComponent).join("/"):client.storage.from("bright-moments-images").getPublicUrl(p.file_path).data.publicUrl,
  title:p.title,category:p.category,section:p.section,managed:true
  }))};
 }
