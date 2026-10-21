@@ -82,3 +82,37 @@ if(dbError){await client.storage.from(bucket).remove([path]);throw dbError;}
 }catch(error){say('status','Upload error: '+error.message);return;}}
 say('status','Photographs uploaded.');$('files').value='';await loadPhotos();
 });
+
+async function removeSelected(){
+const chosen=photos.filter(p=>selected.has(p.id));if(!chosen.length){say('status','Select a photograph first.');return;}
+if(!confirm('Permanently delete '+chosen.length+' selected photograph(s)?'))return;
+const {error}=await client.from('gallery_images').delete().in('id',chosen.map(p=>p.id));
+if(error){say('status',error.message);return;}
+const {error:storageError}=await client.storage.from(bucket).remove(chosen.map(p=>p.file_path));
+say('status',storageError?'Gallery entries deleted; storage cleanup failed: '+storageError.message:'Photographs deleted.');
+await loadPhotos();
+}
+$('delete').addEventListener('click',removeSelected);
+$('rename').addEventListener('click',async()=>{
+const chosen=photos.filter(p=>selected.has(p.id));
+if(chosen.length!==1){say('status','Select exactly one photograph to rename.');return;}
+const title=prompt('New photo title:',chosen[0].title);
+if(title===null)return;
+if(!title.trim()||title.trim().length>160){say('status','Please enter a title between 1 and 160 characters.');return;}
+const {error}=await client.from('gallery_images').update({title:title.trim()}).eq('id',chosen[0].id);
+if(error)say('status',error.message);else await loadPhotos();
+});
+async function moveSelected(direction){
+const chosen=photos.filter(p=>selected.has(p.id));
+if(chosen.length!==1){say('status','Select exactly one photograph to rearrange.');return;}
+const current=photos.findIndex(p=>p.id===chosen[0].id);
+const neighbor=current+direction;
+if(neighbor<0||neighbor>=photos.length)return;
+const a=photos[current],b=photos[neighbor];
+const first=await client.from('gallery_images').update({sort_order:neighbor*10}).eq('id',a.id);
+const second=await client.from('gallery_images').update({sort_order:current*10}).eq('id',b.id);
+if(first.error||second.error)say('status',(first.error||second.error).message);
+else{await loadPhotos();selected.add(a.id);render();}
+}
+$('earlier').addEventListener('click',()=>moveSelected(-1));
+$('later').addEventListener('click',()=>moveSelected(1));
