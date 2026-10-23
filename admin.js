@@ -5,7 +5,7 @@ let client=null,photos=[],selected=new Set(),viewSection="gallery",viewCategory=
 const say=(id,message)=>$(id).textContent=message;
 if(!cfg.url||!cfg.publishableKey){say('message','Setup pending: connect the Supabase project and add its public URL and publishable key to supabase-config.js.');$('signin').querySelector('button').disabled=true;}
 else{
-client=supabase.createClient(cfg.url,cfg.publishableKey,{auth:{detectSessionInUrl:true,autoRefreshToken:true,persistSession:true}});
+client=supabase.createClient(cfg.url,cfg.publishableKey,{auth:{detectSessionInUrl:true,autoRefreshToken:true,persistSession:false}});
 client.auth.onAuthStateChange((event)=>{if(event==='PASSWORD_RECOVERY')recoverForm();else setTimeout(checkAuth,0)});
 checkAuth();
 }
