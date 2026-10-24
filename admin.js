@@ -1,7 +1,7 @@
 const cfg=window.BRIGHT_MOMENTS_SUPABASE||{};
 const $=id=>document.getElementById(id);
 const show=(id,on)=>$(id).hidden=!on;
-let client=null,photos=[],categories=[],selected=new Set(),viewSection="gallery",viewCategory="all",draggedId=null;
+let client=null,photos=[],categories=[],selected=new Set(),viewSection="gallery",viewCategory="all",draggedId=null,savingReorder=false;
 const say=(id,message)=>$(id).textContent=message;
 let signedInUsingForm=false;
 const signInButton=$('signin').querySelector('button');
@@ -77,7 +77,7 @@ const article=document.createElement('article');article.className='item';article
 const photo=document.createElement('div');photo.className='photo';
 const img=document.createElement('img');img.src=url(p.file_path);img.alt=p.title;img.loading='lazy';
 const button=document.createElement('button');button.className='check';button.type='button';button.textContent=selected.has(p.id)?'✓':'○';button.setAttribute('aria-label','Select '+p.title);button.setAttribute('aria-pressed',String(selected.has(p.id)));
-button.onclick=()=>{if(selected.has(p.id))selected.delete(p.id);else selected.add(p.id);render()};
+button.onclick=()=>{if(selected.has(p.id))selected.delete(p.id);else selected.add(p.id);const on=selected.has(p.id);button.textContent=on?'✓':'○';button.setAttribute('aria-pressed',String(on));article.classList.toggle('selected',on);article.draggable=on;};
 attachReorderEvents(article,p.id);
 photo.append(img,button);
 const title=document.createElement('h3');title.textContent=p.title;
@@ -273,11 +273,16 @@ async function reorderSelected(draggedPhotoId,targetId){
  const visibleIds=new Set(visible.map(p=>p.id));
  let j=0;
  const reorderedFull=full.map(p=>visibleIds.has(p.id)?rearranged[j++]:p);
+ if(savingReorder)return;
+ savingReorder=true;
  say('status','Saving the new photo order…');
- const {error}=await client.rpc('reorder_bright_moments_images',{image_ids:reorderedFull.map(p=>p.id)});
- if(error){say('status','Could not save the new order: '+error.message);return;}
- await loadPhotos(true);
- say('status','Photo order saved. The public gallery will use the new order when refreshed.');
+ try{
+  const {error}=await client.rpc('reorder_bright_moments_images',{image_ids:reorderedFull.map(p=>p.id)});
+  if(error)throw error;
+  await loadPhotos(true);
+  say('status','Photo order saved. The public gallery will use the new order when refreshed.');
+ }catch(error){say('status','Could not save the new order: '+error.message);await loadPhotos(true);}
+ finally{savingReorder=false;}
 }
 
 document.querySelectorAll('[data-section]').forEach(button=>{
