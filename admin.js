@@ -3,13 +3,35 @@ const $=id=>document.getElementById(id);
 const show=(id,on)=>$(id).hidden=!on;
 let client=null,photos=[],selected=new Set(),viewSection="gallery",viewCategory="all";
 const say=(id,message)=>$(id).textContent=message;
-if(!cfg.url||!cfg.publishableKey){say('message','Setup pending: connect the Supabase project and add its public URL and publishable key to supabase-config.js.');$('signin').querySelector('button').disabled=true;}
-else{
-client=supabase.createClient(cfg.url,cfg.publishableKey,{auth:{detectSessionInUrl:true,autoRefreshToken:true,persistSession:false}});
-client.auth.onAuthStateChange((event)=>{if(event==='PASSWORD_RECOVERY')recoverForm();else setTimeout(checkAuth,0)});
-checkAuth();
+let signedInUsingForm=false;
+const signInButton=$('signin').querySelector('button');
+const isRecoveryRedirect=()=>{
+ const hash=new URLSearchParams(location.hash.slice(1));
+ const query=new URLSearchParams(location.search);
+ return hash.get('type')==='recovery'||query.get('type')==='recovery'||query.has('code');
+};
+if(!cfg.url||!cfg.publishableKey){
+ say('message','Setup pending: connect the Supabase project and add its public URL and publishable key to supabase-config.js.');
+ signInButton.disabled=true;
+}else{
+ client=supabase.createClient(cfg.url,cfg.publishableKey,{auth:{detectSessionInUrl:true,autoRefreshToken:true,persistSession:false}});
+ // Only a password-reset callback may show an authenticated recovery form automatically.
+ // INITIAL_SESSION, SIGNED_IN and token-refresh events must never open the editor.
+ client.auth.onAuthStateChange(event=>{
+  if(event==='PASSWORD_RECOVERY')recoverForm();
+  if(event==='SIGNED_OUT'){signedInUsingForm=false;show('editor',false);show('login',true);}
+ });
+ if(!isRecoveryRedirect()){
+  // Clear any older Supabase session silently restored by a previous site version.
+  signInButton.disabled=true;
+  client.auth.signOut({scope:'local'}).then(({error})=>{
+   if(error)say('message','Could not clear the previous session. Please refresh to try again.');
+   else signInButton.disabled=false;
+  }).catch(()=>say('message','Could not prepare a new login. Please refresh to try again.'));
+ }
 }
 async function checkAuth(){
+if(!signedInUsingForm)return;
 const {data:{user}}=await client.auth.getUser();
 if(!user){show('login',true);show('editor',false);return;}
 const result=await client.from('site_admins').select('user_id').eq('user_id',user.id).maybeSingle();
@@ -20,6 +42,7 @@ $('signin').addEventListener('submit',async e=>{
 e.preventDefault();if(!client)return;
 say('message','Signing in…');
 const {error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});
+signedInUsingForm=!error;
 say('message',error?'Could not sign in. Please check your credentials.':'');
 if(!error)await checkAuth();
 });
@@ -39,7 +62,7 @@ form.addEventListener('submit',async e=>{e.preventDefault();const {error}=await 
 }
 say('message','Enter your new password.');
 }
-$('logout').addEventListener('click',async()=>{await client.auth.signOut();selected.clear();show('login',true);show('editor',false)});
+$('logout').addEventListener('click',async()=>{signedInUsingForm=false;await client.auth.signOut();selected.clear();show('login',true);show('editor',false)});
 const bucket='bright-moments-images';
 function url(path){if(path.startsWith('github:'))return 'https://raw.githubusercontent.com/sdot61/bright-moments/main/'+path.slice(7).split('/').map(encodeURIComponent).join('/');return client.storage.from(bucket).getPublicUrl(path).data.publicUrl;}
 async function loadPhotos(){
