@@ -156,8 +156,8 @@ async function checkAuth(){
  if(result.error||!result.data){
   const {data:request}=await client.from('editor_access_requests').select('status').eq('user_id',user.id).maybeSingle();
   await stopEditing();
-  if(request?.status==='pending')say('message','Your account was created, but access is pending approval by a site editor.');
-  else if(request?.status==='denied')say('message','Your editing access has not been approved.');
+  if(request?.status==='pending')say('message','Your invitation was received, but editor access was not activated. Please contact the site owner.');
+  else if(request?.status==='denied')say('message','Your editing access has been revoked.');
   else say('message','This account is not authorized to manage Bright Moments.');
   return;
  }
@@ -750,12 +750,12 @@ async function loadAccessRequests(){
   const item=document.createElement('div');item.className='account-row';
   const detail=document.createElement('div');
   const email=document.createElement('div');email.className='account-row-email';email.textContent=entry.email;
-  const status=document.createElement('div');status.className='account-status';status.textContent=entry.status;
+  const status=document.createElement('div');status.className='account-status';status.textContent=entry.status==='approved'?'Editor access active':entry.status==='denied'?'Access revoked':'Account setup incomplete';
   detail.append(email,status);item.append(detail);
   const actions=document.createElement('div');actions.className='access-actions';
   if(entry.user_id!==currentAdminId){
    if(entry.status!=='approved'){
-    const approve=document.createElement('button');approve.type='button';approve.textContent='Approve';
+    const approve=document.createElement('button');approve.type='button';approve.textContent=entry.status==='denied'?'Restore access':'Enable access';
     approve.onclick=()=>reviewAccess(entry.user_id,true,approve);
     actions.append(approve);
    }
@@ -771,11 +771,11 @@ async function loadAccessRequests(){
 async function reviewAccess(id,allow,button){
  if(!currentAdminId||!idleCheck())return;
  button.disabled=true;
- say('accessMessage',allow?'Approving access…':'Updating access…');
+ say('accessMessage',allow?'Enabling editor access…':'Updating access…');
  try{
   const {error}=await client.rpc('review_bright_moments_editor',{target_user:id,approve:allow});
   if(error)throw error;
-  say('accessMessage',allow?'Editor access approved.':'Editor access denied or revoked.');
+  say('accessMessage',allow?'Editor access enabled.':'Editor access revoked.');
   await loadAccessRequests();
  }catch(error){say('accessMessage','Could not update account: '+error.message);button.disabled=false;}
 }
