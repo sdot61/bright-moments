@@ -1,7 +1,7 @@
 const cfg=window.BRIGHT_MOMENTS_SUPABASE||{};
 const $=id=>document.getElementById(id);
 const show=(id,on)=>$(id).hidden=!on;
-let client=null,photos=[],selected=new Set(),viewSection="gallery",viewCategory="all";
+let client=null,photos=[],categories=[],selected=new Set(),viewSection="gallery",viewCategory="all",draggedId=null;
 const say=(id,message)=>$(id).textContent=message;
 let signedInUsingForm=false;
 const signInButton=$('signin').querySelector('button');
@@ -36,7 +36,7 @@ const {data:{user}}=await client.auth.getUser();
 if(!user){show('login',true);show('editor',false);return;}
 const result=await client.from('site_admins').select('user_id').eq('user_id',user.id).maybeSingle();
 if(result.error||!result.data){say('message','This account is not authorized to manage Bright Moments.');show('editor',false);show('login',true);return;}
-show('login',false);show('editor',true);await loadPhotos();
+show('login',false);show('editor',true);await loadCategories();await loadPhotos();
 }
 $('signin').addEventListener('submit',async e=>{
 e.preventDefault();if(!client)return;
@@ -65,19 +65,20 @@ say('message','Enter your new password.');
 $('logout').addEventListener('click',async()=>{signedInUsingForm=false;await client.auth.signOut();selected.clear();show('login',true);show('editor',false)});
 const bucket='bright-moments-images';
 function url(path){if(path.startsWith('github:'))return 'https://raw.githubusercontent.com/sdot61/bright-moments/main/'+path.slice(7).split('/').map(encodeURIComponent).join('/');return client.storage.from(bucket).getPublicUrl(path).data.publicUrl;}
-async function loadPhotos(){
+async function loadPhotos(keepSelection=false){
 const {data,error}=await client.from('gallery_images').select('*').order('sort_order',{ascending:true}).order('created_at',{ascending:true});
 if(error){say('status',error.message);return;}
-photos=data||[];selected.clear();render();
+photos=data||[];if(!keepSelection)selected.clear();render();
 }
 function render(){
 const container=$('images');container.replaceChildren();
-for(const p of photos.filter(p=>p.section===viewSection&&(viewCategory==="all"||p.category===viewCategory))){
-const article=document.createElement('article');article.className='item';
+for(const p of visiblePhotos()){
+const article=document.createElement('article');article.className='item';article.dataset.photoId=p.id;article.draggable=selected.has(p.id);article.tabIndex=0;if(selected.has(p.id))article.classList.add('selected');
 const photo=document.createElement('div');photo.className='photo';
 const img=document.createElement('img');img.src=url(p.file_path);img.alt=p.title;img.loading='lazy';
 const button=document.createElement('button');button.className='check';button.type='button';button.textContent=selected.has(p.id)?'✓':'○';button.setAttribute('aria-label','Select '+p.title);button.setAttribute('aria-pressed',String(selected.has(p.id)));
 button.onclick=()=>{if(selected.has(p.id))selected.delete(p.id);else selected.add(p.id);render()};
+attachReorderEvents(article,p.id);
 photo.append(img,button);
 const title=document.createElement('h3');title.textContent=p.title;
 const meta=document.createElement('p');meta.textContent=p.section+' · '+p.category;
@@ -125,19 +126,161 @@ if(!title.trim()||title.trim().length>160){say('status','Please enter a title be
 const {error}=await client.from('gallery_images').update({title:title.trim()}).eq('id',chosen[0].id);
 if(error)say('status',error.message);else await loadPhotos();
 });
-async function moveSelected(direction){
-const chosen=photos.filter(p=>selected.has(p.id));
-if(chosen.length!==1){say('status','Select exactly one photograph to rearrange.');return;}
-const same=photos.filter(p=>p.section===chosen[0].section&&p.category===chosen[0].category);
-const index=same.findIndex(p=>p.id===chosen[0].id),neighbor=index+direction;
-if(neighbor<0||neighbor>=same.length)return;
-[same[index],same[neighbor]]=[same[neighbor],same[index]];
-for(let i=0;i<same.length;i++){const {error}=await client.from('gallery_images').update({sort_order:i}).eq('id',same[i].id);if(error){say('status',error.message);return;}}
-await loadPhotos();selected.add(chosen[0].id);render();
+
+function visiblePhotos(){
+ return photos.filter(p=>p.section===viewSection&&(viewCategory==='all'||p.category===viewCategory))
+  .sort((a,b)=>a.sort_order-b.sort_order||a.created_at.localeCompare(b.created_at));
 }
-$('earlier').addEventListener('click',()=>moveSelected(-1));
-$('later').addEventListener('click',()=>moveSelected(1));
 
-document.querySelectorAll('[data-section]').forEach(button=>{const change=()=>{viewSection=button.dataset.section;selected.clear();render()};button.addEventListener('mouseenter',change);button.addEventListener('click',change)});
-document.querySelectorAll('[data-category]').forEach(button=>{const change=()=>{viewCategory=button.dataset.category;selected.clear();render()};button.addEventListener('mouseenter',change);button.addEventListener('click',change)});
+const palette=['#f2a277','#c9b4dc','#e9a4a9','#f2d36b','#b6d6a0'];
+function changeCategory(next){
+ viewCategory=next;
+ selected.clear();
+ document.querySelectorAll('[data-category]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.category===next)));
+ render();
+}
+function changeSection(next){
+ viewSection=next;
+ selected.clear();
+ document.querySelectorAll('[data-section]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.section===next)));
+ render();
+}
+async function loadCategories(){
+ const {data,error}=await client.from('gallery_categories').select('slug,label,color,sort_order').order('sort_order').order('label');
+ if(error){say('tabMessage','Could not load tabs: '+error.message);return;}
+ categories=data||[];
+ const nav=document.querySelector('.secondary');
+ nav.replaceChildren();
+ const all=document.createElement('button');all.type='button';all.dataset.category='all';all.textContent='All';all.style.backgroundColor='#b6d6a0';
+ all.addEventListener('mouseenter',()=>changeCategory('all'));
+ all.addEventListener('click',()=>changeCategory('all'));nav.append(all);
+ const dropdown=$('category');const previous=dropdown.value;
+ dropdown.replaceChildren();
+ for(const c of categories){
+  const option=document.createElement('option');option.value=c.slug;option.textContent=c.label;dropdown.add(option);
+  const button=document.createElement('button');button.type='button';button.dataset.category=c.slug;button.textContent=c.label;
+  button.style.backgroundColor=/^#[0-9a-fA-F]{6}$/.test(c.color)?c.color:'#b6d6a0';
+  button.addEventListener('mouseenter',()=>changeCategory(c.slug));
+  button.addEventListener('click',()=>changeCategory(c.slug));
+  nav.append(button);
+ }
+ if(categories.some(c=>c.slug===previous))dropdown.value=previous;
+ if(viewCategory!=='all'&&!categories.some(c=>c.slug===viewCategory))viewCategory='all';
+ nav.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.category===viewCategory)));
+}
+$('createTab').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const input=$('newTabName'),label=input.value.trim().replace(/\s+/g,' ');
+ if(!label||label.length>40){say('tabMessage','Please enter a tab name of 1–40 characters.');return;}
+ const slug=label.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,48).replace(/-$/,'');
+ if(!slug){say('tabMessage','Please use a name containing letters or numbers.');return;}
+ if(categories.some(c=>c.slug===slug||c.label.toLowerCase()===label.toLowerCase())){
+  say('tabMessage','A tab with that name already exists.');return;
+ }
+ const button=$('createTab').querySelector('button');button.disabled=true;
+ say('tabMessage','Creating the tab…');
+ try{
+  const order=categories.length?Math.max(...categories.map(c=>c.sort_order))+10:10;
+  const color=palette[categories.length%palette.length];
+  const {error}=await client.from('gallery_categories').insert({slug,label,sort_order:order,color});
+  if(error)throw error;
+  input.value='';
+  await loadCategories();
+  $('category').value=slug;
+  changeCategory(slug);
+  say('tabMessage','Created '+label+'. The new tab is available in the public gallery and upload menu.');
+ }catch(error){say('tabMessage','Could not create tab: '+error.message)}
+ finally{button.disabled=false;}
+});
 
+let touchDrag=null;
+function highlightDrop(id){
+ document.querySelectorAll('.item.drag-target').forEach(el=>el.classList.remove('drag-target'));
+ if(!id)return;
+ const item=Array.from(document.querySelectorAll('.item')).find(el=>el.dataset.photoId===id);
+ if(item)item.classList.add('drag-target');
+}
+function dragCleanup(){
+ draggedId=null;touchDrag=null;highlightDrop(null);
+ document.body.classList.remove('reordering');
+}
+function attachReorderEvents(article,id){
+ article.addEventListener('dragstart',event=>{
+  if(!selected.has(id)){event.preventDefault();return;}
+  draggedId=id;
+  event.dataTransfer.effectAllowed='move';
+  event.dataTransfer.setData('text/plain',id);
+  document.body.classList.add('reordering');
+ });
+ article.addEventListener('dragover',event=>{
+  if(!draggedId)return;
+  event.preventDefault();event.dataTransfer.dropEffect='move';highlightDrop(id);
+ });
+ article.addEventListener('drop',event=>{
+  if(!draggedId)return;
+  event.preventDefault();const source=draggedId;dragCleanup();
+  if(source!==id)reorderSelected(source,id);
+ });
+ article.addEventListener('dragend',dragCleanup);
+ article.addEventListener('pointerdown',event=>{
+  if(event.pointerType==='mouse'||!selected.has(id)||event.target.closest('button'))return;
+  touchDrag={id,pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,target:null,active:false};
+  article.setPointerCapture(event.pointerId);
+ });
+ article.addEventListener('pointermove',event=>{
+  if(!touchDrag||touchDrag.pointerId!==event.pointerId||touchDrag.id!==id)return;
+  if(!touchDrag.active&&Math.hypot(event.clientX-touchDrag.startX,event.clientY-touchDrag.startY)<8)return;
+  touchDrag.active=true;event.preventDefault();
+  document.body.classList.add('reordering');
+  const under=document.elementFromPoint(event.clientX,event.clientY)?.closest('.item');
+  touchDrag.target=under?.dataset.photoId||null;
+  highlightDrop(touchDrag.target);
+ });
+ article.addEventListener('pointerup',event=>{
+  if(!touchDrag||touchDrag.pointerId!==event.pointerId||touchDrag.id!==id)return;
+  const target=touchDrag.target,active=touchDrag.active;dragCleanup();
+  if(active&&target&&target!==id)reorderSelected(id,target);
+ });
+ article.addEventListener('pointercancel',dragCleanup);
+ article.addEventListener('keydown',event=>{
+  if(!selected.has(id)||!['ArrowLeft','ArrowRight'].includes(event.key))return;
+  event.preventDefault();
+  const ordered=visiblePhotos();const n=ordered.findIndex(p=>p.id===id);
+  const next=ordered[n+(event.key==='ArrowLeft'?-1:1)];
+  if(next)reorderSelected(id,next.id);
+ });
+}
+
+async function reorderSelected(draggedPhotoId,targetId){
+ const visible=visiblePhotos();
+ const from=visible.findIndex(p=>p.id===draggedPhotoId);
+ const to=visible.findIndex(p=>p.id===targetId);
+ if(from<0||to<0||from===to||!selected.has(draggedPhotoId))return;
+ const rearranged=visible.slice();
+ const moving=rearranged.filter(p=>selected.has(p.id));
+ const target=rearranged[to];
+ if(selected.has(target.id))return;
+ if(moving.length===1&&Math.abs(to-from)===1){
+  [rearranged[from],rearranged[to]]=[rearranged[to],rearranged[from]];
+ }else{
+  const remaining=rearranged.filter(p=>!selected.has(p.id));
+  const targetIndex=remaining.findIndex(p=>p.id===target.id);
+  const insertAt=targetIndex+(to>from?1:0);
+  remaining.splice(insertAt,0,...moving);
+  rearranged.splice(0,rearranged.length,...remaining);
+ }
+ const full=photos.filter(p=>p.section===viewSection).slice().sort((a,b)=>a.sort_order-b.sort_order||a.created_at.localeCompare(b.created_at));
+ const visibleIds=new Set(visible.map(p=>p.id));
+ let j=0;
+ const reorderedFull=full.map(p=>visibleIds.has(p.id)?rearranged[j++]:p);
+ say('status','Saving the new photo order…');
+ const {error}=await client.rpc('reorder_bright_moments_images',{image_ids:reorderedFull.map(p=>p.id)});
+ if(error){say('status','Could not save the new order: '+error.message);return;}
+ await loadPhotos(true);
+ say('status','Photo order saved. The public gallery will use the new order when refreshed.');
+}
+
+document.querySelectorAll('[data-section]').forEach(button=>{
+ const change=()=>changeSection(button.dataset.section);
+ button.addEventListener('mouseenter',change);button.addEventListener('click',change);
+});
