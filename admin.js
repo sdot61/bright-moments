@@ -642,33 +642,46 @@ document.querySelectorAll('[data-section]').forEach(button=>{
 
 
 
-function registrationToken(){
- const bytes=crypto.getRandomValues(new Uint8Array(32));
- let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
- return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-}
-async function hexHash(token){
- const buffer=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token));
- return [...new Uint8Array(buffer)].map(n=>n.toString(16).padStart(2,'0')).join('');
-}
+// Create a registration link on the server, after verifying the current editor
+// account and its authorization. The link is only ever returned to this session.
 $('makeSignupLink').addEventListener('click',async()=>{
- if(!currentAdminId||!idleCheck())return;
- const button=$('makeSignupLink');button.disabled=true;
- say('accessMessage','Creating registration link…');
+ const button=$('makeSignupLink');
+ if(!currentAdminId||!idleCheck()){
+  say('accessMessage','Sign in as an approved editor to create a registration link.');
+  return;
+ }
+ button.disabled=true;
+ say('accessMessage','Creating a registration link…');
  try{
-  const token=registrationToken();
-  const tokenHash=await hexHash(token);
-  const expiry=new Date(Date.now()+7*86400000).toISOString();
-  const {error}=await client.from('editor_registration_links')
-   .insert({token_hash:tokenHash,created_by:currentAdminId,expires_at:expiry});
-  if(error)throw error;
-  const link=new URL('register.html',location.href);
-  link.hash='token='+token;
-  $('signupLink').value=link.href;
+  const {data:{session},error:sessionError}=await client.auth.getSession();
+  if(sessionError||!session?.access_token)throw Error('Your login expired. Please sign in again.');
+  const response=await fetch(cfg.url+'/functions/v1/create-bright-moments-signup-link',{
+   method:'POST',
+   headers:{
+    'Authorization':'Bearer '+session.access_token,
+    'apikey':cfg.publishableKey,
+    'Content-Type':'application/json'
+   },
+   body:'{}'
+  });
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(result.error||'Could not create the registration link.');
+  if(typeof result.url!=='string'||!result.url.includes('/register.html#token='))throw Error('The server did not return a valid registration link.');
+  const field=$('signupLink');
+  field.value=result.url;
   $('signupLinkArea').hidden=false;
-  say('accessMessage','Registration link created. It can be used once, within seven days. Access still requires your approval.');
- }catch(error){say('accessMessage','Could not create the registration link: '+error.message);}
- finally{button.disabled=false;}
+  const preview=$('registrationPreview');
+  if(preview)preview.href=result.url;
+  say('accessMessage','Link created. Copy it and send it to your client. It can be used once within seven days.');
+  $('signupLinkArea').scrollIntoView({block:'nearest'});
+  field.focus({preventScroll:true});
+  field.select();
+ }catch(error){
+  console.error('Registration link creation failed',error);
+  say('accessMessage','Unable to generate link: '+(error.message||'Please try again.'));
+ }finally{
+  button.disabled=false;
+ }
 });
 $('copySignupLink').addEventListener('click',async()=>{
  const value=$('signupLink').value;
