@@ -90,3 +90,8 @@ body.moving-images .secondary [data-category="all"]{opacity:.4;cursor:not-allowe
 
 /* Inline photograph titles remain editable despite disabling drag text-selection. */
 .photo-title-input{user-select:text;-webkit-user-select:text;touch-action:auto}
+
+/* The brand title and subtitle act as one keyboard-accessible home/editor link. */
+header .brand-link{display:inline-block;text-decoration:none;color:inherit;cursor:pointer}
+header .brand-link:focus-visible{outline:2px solid #3d3c3a;outline-offset:6px}
+header .brand-link h1,header .brand-link p{color:inherit}
