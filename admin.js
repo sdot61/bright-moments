@@ -188,7 +188,7 @@ const path=crypto.randomUUID()+'.jpg';
 const {error:uploadError}=await client.storage.from(bucket).upload(path,blob,{contentType:'image/jpeg',upsert:false});
 if(uploadError)throw uploadError;
 const {error:dbError}=await client.from('gallery_images').insert({file_path:path,title:file.name.replace(/\.[^.]+$/,'').replace(/[_-]/g,' '),section:$('section').value,category:$('category').value,sort_order:photos.length});
-if(dbError){await client.storage.from(bucket).remove([path]);throw dbError;}
+if(dbError){await client.storage.from(bucket).remove([path]);throw dbError;}signalGalleryChange();
 }catch(error){say('status','Upload error: '+error.message);return;}}
 say('status','Photographs uploaded.');$('files').value='';await loadPhotos();
 });
@@ -259,7 +259,7 @@ const title=prompt('New photo title:',chosen[0].title);
 if(title===null)return;
 if(!title.trim()||title.trim().length>160){say('status','Please enter a title between 1 and 160 characters.');return;}
 const {error}=await client.from('gallery_images').update({title:title.trim()}).eq('id',chosen[0].id);
-if(error)say('status',error.message);else await loadPhotos();
+if(error)say('status',error.message);else{signalGalleryChange();await loadPhotos();}
 });
 
 function visiblePhotos(){
@@ -320,6 +320,7 @@ $('createTab').addEventListener('submit',async e=>{
   const {error}=await client.from('gallery_categories').insert({slug,label,sort_order:order,color});
   if(error)throw error;
   input.value='';
+  signalGalleryChange();
   await loadCategories();
   $('category').value=slug;
   changeCategory(slug);
@@ -414,6 +415,7 @@ async function reorderSelected(draggedPhotoId,targetId){
  try{
   const {error}=await client.rpc('reorder_bright_moments_images',{image_ids:reorderedFull.map(p=>p.id)});
   if(error)throw error;
+  signalGalleryChange();
   await loadPhotos(true);
   say('status','Photo order saved. The public gallery will use the new order when refreshed.');
  }catch(error){say('status','Could not save the new order: '+error.message);await loadPhotos(true);}
