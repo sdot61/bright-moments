@@ -1,26 +1,42 @@
--- BRIGHT MOMENTS: Setup applied to Supabase on October 20, 2026.
--- Do not run another copy of the initial schema SQL.
+-- BRIGHT MOMENTS SUPABASE SETUP / OWNER CHECKLIST
 -- Project: wxgqesprekuzgqhhimlz
--- Tables: public.gallery_images, public.site_admins
--- Storage bucket: bright-moments-images
--- RLS: enabled for both tables; owner write policies use private function app_private.is_gallery_admin.
+-- Applied database tables: public.site_admins, public.editor_access_requests,
+-- public.editor_registration_links, public.gallery_images,
+-- public.gallery_categories, public.gallery_settings, public.gallery_storage_cleanup.
 --
--- REMAINING OWNER SETUP (Supabase Dashboard):
--- 1. Authentication > Users > Add user > Create new user. Use the owner's real email;
---    choose a unique strong password via the secure Dashboard, NOT in GitHub or chat.
--- 2. Copy the user's UUID from the Dashboard, then execute this statement in SQL Editor
---    after replacing the placeholder UUID:
---      insert into public.site_admins(user_id) values ('OWNER-USER-UUID-HERE');
--- 3. Authentication > URL Configuration:
---    Site URL: https://sdot61.github.io/bright-moments/
---    Additional redirect URLs: https://sdot61.github.io/bright-moments/admin.html
--- 4. Authentication > Providers > Email: turn OFF public signups if only owner access is needed.
--- 5. Set up production SMTP/email delivery for dependable password-reset emails.
--- 6. Enable available bot protection and consider MFA (the login page will need an MFA
---    enrollment/challenge flow before MFA can be enforced on login).
+-- ACCESS WORKFLOW
+-- 1. Authorized editor opens admin.html and expands
+--    "Editor accounts & registration" at the bottom of the page.
+-- 2. "Create registration link" generates a 256-bit token in the browser.
+--    Only the SHA-256 hash is stored in the database. The share link is
+--    single-use, expires in seven days, and carries its token in the URL fragment.
+-- 3. Recipient visits register.html with that link and supplies their email.
+--    Supabase's Edge Function register-bright-moments-editor validates and
+--    consumes the link, sends a private email invitation, and queues the
+--    account with "pending" access. No admin membership is granted.
+-- 4. Recipient follows the email invitation, chooses a password, then waits
+--    for approval. Approved editors can approve or deny accounts from admin.html.
+--    Database RLS and storage policies independently prevent pending and denied
+--    users from modifying photos, regardless of what the browser UI displays.
 --
--- PUBLIC CONFIG: supabase-config.js only contains a publishable key.
--- NEVER put a database password, secret API key, or service_role key into frontend files.
+-- CRITICAL MANUAL AUTH SETTINGS in the Supabase Dashboard:
+-- * Authentication > Providers > Email: disable open/public signups so
+--   random bots cannot directly call the public Supabase Auth signup endpoint.
+--   The private Edge Function uses privileged admin invitations instead.
+-- * Authentication > URL Configuration: set website Site URL and allow
+--   https://sdot61.github.io/bright-moments/admin.html as redirect URL.
+-- * Authentication > SMTP: configure a verified production email sender.
+--   Supabase's built-in SMTP usually only delivers to project-team emails.
+-- * Authentication > Security and Protection: enable leaked-password protection
+--   if the plan supports it; consider CAPTCHA and Auth rate limits.
 --
--- Existing image files under Gallery/ remain unchanged and publicly visible.
--- They need a one-time migration/upload into the new storage bucket before being editable.
+-- DO NOT add secret/service-role/database credentials to the GitHub Pages
+-- repository. The only frontend key is a public Supabase publishable key.
+-- The privileged service-role credential is accessed inside Supabase Edge Functions.
+--
+-- The older invite-bright-moments-editor Edge Function has been disabled (HTTP 410)
+-- so the owner-generated registration/approval flow is the only site flow.
+--
+-- PUBLIC FILES: index.html, register.html. ADMIN: admin.html.
+-- GitHub Pages can serve the admin HTML publicly, but only approved editors
+-- receive data or editing privileges; a URL alone never grants access.
