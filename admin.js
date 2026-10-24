@@ -9,11 +9,17 @@ const LAST_ACTIVITY_KEY='bright-moments-owner-last-activity-v1';
 let currentAdminId=null,lastActivityWrite=0,logoutInProgress=false,recoveryMode=false;
 const signInButton=$('signin').querySelector('button');
 function showReadyPage(){document.body.dataset.authState='ready';}
-const isRecoveryRedirect=()=>{
+const authRedirectType=(()=>{
  const hash=new URLSearchParams(location.hash.slice(1));
  const query=new URLSearchParams(location.search);
- return hash.get('type')==='recovery'||query.get('type')==='recovery'||query.has('code');
-};
+ const type=hash.get('type')||query.get('type');
+ if(type==='recovery')return 'recovery';
+ if(type==='invite')return 'invite';
+ // OAuth/PKCE verification may return an authorization code.
+ if(query.has('code'))return 'invite';
+ return null;
+})();
+const isRecoveryRedirect=()=>authRedirectType!==null;
 function readLastActivity(){
  try{
   const record=JSON.parse(localStorage.getItem(LAST_ACTIVITY_KEY)||'null');
@@ -78,7 +84,8 @@ if(!cfg.url||!cfg.publishableKey){
   auth:{detectSessionInUrl:true,autoRefreshToken:true,persistSession:true,storageKey:'bright-moments-owner-session-v1'}
  });
  client.auth.onAuthStateChange(event=>{
-  if(event==='PASSWORD_RECOVERY'){recoveryMode=true;recoverForm();}
+  if(event==='PASSWORD_RECOVERY'){recoveryMode=true;recoverForm('recovery');}
+  else if(event==='SIGNED_IN'&&authRedirectType==='invite'){recoverForm('invite');}
   else if(event==='SIGNED_OUT'){clearEditorAccess();}
  });
  if(!isRecoveryRedirect()){
@@ -147,15 +154,46 @@ if(!email){say('message','Enter your account email first.');return;}
 const {error}=await client.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
 say('message',error?error.message:'If this account exists, a password-reset email will be sent.');
 });
-function recoverForm(){
-showReadyPage();
-show('login',true);show('editor',false);
-$('signin').hidden=true;$('forgot').hidden=true;
-let form=document.getElementById('recover');
-if(!form){form=document.createElement('form');form.id='recover';form.innerHTML='<label>New password (at least 12 characters)<input type="password" minlength="12" required autocomplete="new-password"></label><button type="submit">Save new password</button>'; $('login').append(form);
-form.addEventListener('submit',async e=>{e.preventDefault();const {error}=await client.auth.updateUser({password:form.querySelector('input').value});say('message',error?error.message:'Password updated. You can now sign in.');if(!error){form.remove();$('signin').hidden=false;$('forgot').hidden=false;await client.auth.signOut();}});
-}
-say('message','Enter your new password.');
+function recoverForm(kind='recovery'){
+ showReadyPage();
+ show('login',true);
+ show('editor',false);
+ $('signin').hidden=true;
+ $('forgot').hidden=true;
+ const heading=$('login').querySelector('h2');
+ if(heading)heading.textContent=kind==='invite'?'Create your Bright Moments password':'Reset your Bright Moments password';
+ let form=$('recover');
+ if(!form){
+  form=document.createElement('form');
+  form.id='recover';
+  const label=document.createElement('label');
+  label.textContent='New password (at least 12 characters)';
+  const field=document.createElement('input');
+  field.type='password';field.minLength=12;field.required=true;field.autocomplete='new-password';
+  const button=document.createElement('button');
+  button.type='submit';button.textContent='Set password';
+  label.append(field);form.append(label,button);
+  $('login').append(form);
+  form.addEventListener('submit',async e=>{
+   e.preventDefault();
+   const button=form.querySelector('button');
+   button.disabled=true;
+   const password=form.querySelector('input').value;
+   if(password.length<12){say('message','Please use a password of at least 12 characters.');button.disabled=false;return;}
+   const {error}=await client.auth.updateUser({password});
+   if(error){say('message',error.message);button.disabled=false;return;}
+   form.remove();
+   $('signin').hidden=false;
+   $('forgot').hidden=false;
+   if(heading)heading.textContent='Owner sign in';
+   localStorage.removeItem(LAST_ACTIVITY_KEY);
+   history.replaceState(null,'',location.pathname);
+   await client.auth.signOut({scope:'local'});
+   clearEditorAccess();
+   say('message','Password saved. Sign in with your email and new password.');
+  });
+ }
+ say('message',kind==='invite'?'Invitation verified. Choose a password to activate your editor account.':'Choose a new password.');
 }
 $('logout').addEventListener('click',()=>{void stopEditing()});
 const bucket='bright-moments-images';
@@ -467,4 +505,33 @@ async function reorderSelected(draggedPhotoId,targetId){
 document.querySelectorAll('[data-section]').forEach(button=>{
  const change=()=>changeSection(button.dataset.section);
  button.addEventListener('mouseenter',change);button.addEventListener('click',change);
+});
+
+$('inviteEditorForm').addEventListener('submit',async event=>{
+ event.preventDefault();
+ if(!client||!currentAdminId||!idleCheck())return;
+ const input=$('inviteEmail');
+ const email=input.value.trim().toLowerCase();
+ if(!email){say('inviteMessage','Enter an email address.');return;}
+ const button=$('inviteEditorForm').querySelector('button');
+ button.disabled=true;
+ say('inviteMessage','Sending invitation…');
+ try{
+  const {data:{session},error:sessionError}=await client.auth.getSession();
+  if(sessionError||!session?.access_token)throw Error('Please sign in again.');
+  const response=await fetch(cfg.url+'/functions/v1/invite-bright-moments-editor',{
+   method:'POST',
+   headers:{
+    'Authorization':'Bearer '+session.access_token,
+    'apikey':cfg.publishableKey,
+    'Content-Type':'application/json'
+   },
+   body:JSON.stringify({email})
+  });
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(result.error||'Could not send invitation.');
+  say('inviteMessage','Invitation sent. The recipient will receive a private password-setup link.');
+  input.value='';
+ }catch(error){say('inviteMessage',error.message)}
+ finally{button.disabled=false;}
 });
