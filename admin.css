@@ -80,3 +80,10 @@ body.moving-images .secondary [data-category="all"]{opacity:.4;cursor:not-allowe
 @media(max-width:560px){.access-panel{padding:16px}.account-row{flex-direction:column;align-items:flex-start}}
 
 .access-panel{margin-top:65px}.access-panel summary{cursor:pointer;font-size:20px;padding:8px 4px;user-select:none}.access-panel summary:hover{color:#2469df}.access-panel[open] summary{border-bottom:1px solid #ddd;margin-bottom:19px}
+
+/* The photograph is a genuine drag surface; titles remain editable separately. */
+.item .photo{touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+.item.drag-source .photo{cursor:grabbing}
+.item.selected .photo,.item.drag-target .photo,.item.drag-source .photo{outline:3px solid #2469df!important;outline-offset:-3px!important}
+.item .check{pointer-events:none}
+.secondary [data-category],.primary [data-section]{cursor:pointer}
