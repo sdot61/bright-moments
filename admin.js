@@ -406,63 +406,85 @@ function endMoveMode(){
  document.body.classList.remove('moving-images');
  $('moveImage').setAttribute('aria-pressed','false');
 }
-function showMoveRibbon(){
+function showMoveRibbon(message){
  let banner=$('moveConfirmation');
  if(!banner){
   banner=document.createElement('div');
   banner.id='moveConfirmation';
   banner.setAttribute('role','status');
   banner.setAttribute('aria-live','polite');
-  banner.textContent='Image has been moved';
   banner.hidden=true;
   document.body.append(banner);
  }
+ banner.textContent=message;
  if(moveNoticeTimer)clearTimeout(moveNoticeTimer);
  banner.hidden=false;
- moveNoticeTimer=setTimeout(()=>{banner.hidden=true;moveNoticeTimer=null;},2600);
+ moveNoticeTimer=setTimeout(()=>{banner.hidden=true;moveNoticeTimer=null;},3000);
 }
 $('moveImage').addEventListener('click',()=>{
+ if($('moveImage').disabled)return;
  if(movingImages){endMoveMode();return;}
  if(!selected.size){say('status','Select one or more photos to move.');return;}
  movingImages=true;
  document.body.classList.add('moving-images');
  $('moveImage').setAttribute('aria-pressed','true');
+ say('status','Choose the destination tab for the selected photo'+(selected.size===1?'':'s')+'.');
 });
 async function moveToCategory(slug){
- if(!movingImages||slug==='all'||!categories.some(c=>c.slug===slug))return;
- const ids=[...selected];
- if(!ids.length){endMoveMode();return;}
+ if(!movingImages||slug==='all')return;
  const destination=categories.find(c=>c.slug===slug);
- if(ids.every(id=>photos.find(p=>p.id===id)?.category===slug)){
-  say('status','The selected photo'+(ids.length===1?' is':'s are')+' already in '+destination.label+'. Choose a different tab.');
+ if(!destination)return;
+ const button=$('moveImage');
+ if(button.disabled)return; // Prevent simultaneous moves to different tabs.
+ const original=new Map(photos.map(p=>[p.id,p.category]));
+ const moveIds=[...selected].filter(id=>original.has(id)&&original.get(id)!==slug);
+ if(!moveIds.length){
+  say('status','The selected photo'+(selected.size===1?' is':'s are')+' already in '+destination.label+'. Choose a different tab.');
   return;
  }
- const button=$('moveImage');
+ const fromCategories=[...new Set(moveIds.map(id=>original.get(id)))];
+ const fromLabel=fromCategories.length===1
+  ? (categories.find(c=>c.slug===fromCategories[0])?.label||fromCategories[0])
+  : 'multiple categories';
+ const message=(moveIds.length===1?'Photo':' '+moveIds.length+' photos'.trimStart())+' moved from '+fromLabel+' to '+destination.label+'.';
  button.disabled=true;
+ let saved=false;
  try{
-  // The returned category verifies that the move was actually persisted.
-  const {data,error}=await client.from('gallery_images')
-   .update({category:slug}).in('id',ids).select('id,category');
-  if(error)throw error;
-  const updated=new Set((data||[]).filter(p=>p.category===slug).map(p=>p.id));
-  if(ids.some(id=>!updated.has(id)))throw Error('Some photos were not moved. Refresh and try again.');
-  // Keep the current source tab in view. Update the local gallery immediately
-  // after a confirmed save, so transferred photos disappear from this tab.
+  // First check what the database reports was actually updated.
+  const {data:updated,error:updateError}=await client.from('gallery_images')
+   .update({category:slug}).in('id',moveIds).select('id,category');
+  if(updateError)throw updateError;
+  if(!updated||updated.length!==moveIds.length||
+     updated.some(p=>p.category!==slug)||
+     moveIds.some(id=>!updated.some(p=>p.id===id))){
+   throw Error('Supabase did not confirm all category changes.');
+  }
+  saved=true;
+  // Independently reread the saved records. A success ribbon appears ONLY
+  // if their authoritative database categories match the clicked destination.
+  const {data:verified,error:verifyError}=await client.from('gallery_images')
+   .select('id,category').in('id',moveIds);
+  if(verifyError)throw verifyError;
+  if(!verified||verified.length!==moveIds.length||
+     verified.some(p=>p.category!==slug)||
+     moveIds.some(id=>!verified.some(p=>p.id===id))){
+   throw Error('The saved photo categories could not be verified.');
+  }
   for(const photo of photos){
-   if(updated.has(photo.id))photo.category=slug;
+   if(moveIds.includes(photo.id))photo.category=slug;
   }
   selected.clear();
   endMoveMode();
-  render();
+  render(); // Remain in original category; moved photos vanish immediately.
   signalGalleryChange();
-  showMoveRibbon();
-  say('status',viewCategory==='all'
-   ? 'Moved to '+destination.label+'. The All tab continues to show photographs from every category.'
-   : '');
+  showMoveRibbon(message);
+  say('status',message+(viewCategory==='all'?' The All tab still includes all categories.':''));
  }catch(error){
-  say('status','Could not move images: '+error.message);
+  say('status',(saved?'The move may have saved, but verification failed: ':'Could not move photos: ')+error.message);
   await loadPhotos(true);
- }finally{button.disabled=false;}
+ }finally{
+  button.disabled=false;
+ }
 }
 function selectCategoryTab(slug){
  if(movingImages){void moveToCategory(slug);return;}
