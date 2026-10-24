@@ -193,14 +193,63 @@ if(dbError){await client.storage.from(bucket).remove([path]);throw dbError;}
 say('status','Photographs uploaded.');$('files').value='';await loadPhotos();
 });
 
+const GALLERY_CHANGE_KEY='bright-moments-gallery-updated-v1';
+const galleryChannel=typeof BroadcastChannel==='function'?new BroadcastChannel('bright-moments-gallery'):null;
+function signalGalleryChange(){
+ try{
+  galleryChannel?.postMessage({type:'gallery-changed'});
+  localStorage.setItem(GALLERY_CHANGE_KEY,String(Date.now()));
+ }catch(error){console.warn('Could not notify other open gallery tabs',error);}
+}
+let deletingPhotos=false;
 async function removeSelected(){
-const chosen=photos.filter(p=>selected.has(p.id));if(!chosen.length){say('status','Select a photograph first.');return;}
-if(!confirm('Permanently delete '+chosen.length+' selected photograph(s)?'))return;
-const {error}=await client.from('gallery_images').delete().in('id',chosen.map(p=>p.id));
-if(error){say('status',error.message);return;}
-const storagePaths=chosen.map(p=>p.file_path).filter(p=>!p.startsWith('github:'));const {error:storageError}=storagePaths.length?await client.storage.from(bucket).remove(storagePaths):{error:null};
-say('status',storageError?'Gallery entries deleted; storage cleanup failed: '+storageError.message:'Photographs deleted.');
-await loadPhotos();
+ if(!client||!currentAdminId||!idleCheck()||deletingPhotos)return;
+ const chosen=photos.filter(p=>selected.has(p.id));
+ if(!chosen.length){say('status','Select at least one photograph first.');return;}
+ if(!confirm('Permanently remove '+chosen.length+' selected photograph(s) from Bright Moments?'))return;
+ deletingPhotos=true;
+ const deleteButton=$('delete');deleteButton.disabled=true;
+ say('status','Deleting selected photographs…');
+ try{
+  const {data:deleted,error}=await client.from('gallery_images')
+   .delete().in('id',chosen.map(p=>p.id)).select('id,file_path');
+  if(error)throw error;
+  const deletedRows=deleted||[];
+  if(!deletedRows.length)throw Error('No photos were deleted. Please check your permissions.');
+  // Change the editor immediately after the successful database deletion.
+  const deletedIds=new Set(deletedRows.map(p=>p.id));
+  photos=photos.filter(p=>!deletedIds.has(p.id));
+  for(const id of deletedIds)selected.delete(id);
+  render();
+  signalGalleryChange();
+  // Old GitHub-backed photos have no Supabase Storage object: only their metadata is removed.
+  // New uploads live in Supabase Storage, so permanently remove those files as well.
+  const paths=deletedRows.map(p=>p.file_path).filter(p=>!p.startsWith('github:'));
+  const failed=[];
+  for(let i=0;i<paths.length;i+=100){
+   const batch=paths.slice(i,i+100);
+   let error=null;
+   for(let attempt=0;attempt<3;attempt++){
+    const response=await client.storage.from(bucket).remove(batch);
+    error=response.error;
+    if(!error)break;
+    if(attempt<2)await new Promise(resolve=>setTimeout(resolve,300*(attempt+1)));
+   }
+   if(error)failed.push(...batch);
+  }
+  if(failed.length){
+   say('status',deletedRows.length+' photo(s) removed from the website, but '+failed.length+
+       ' Supabase file(s) could not be deleted. Their cleanup needs to be retried.');
+  }else{
+   say('status',deletedRows.length+' photo(s) removed from the editor and public gallery.'+
+      (paths.length?' '+paths.length+' Supabase file(s) deleted.':''));
+  }
+ }catch(error){
+  say('status','Deletion failed; photos have not been removed: '+error.message);
+ }finally{
+  deletingPhotos=false;
+  deleteButton.disabled=false;
+ }
 }
 $('delete').addEventListener('click',removeSelected);
 $('rename').addEventListener('click',async()=>{
