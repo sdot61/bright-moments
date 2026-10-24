@@ -432,21 +432,37 @@ async function moveToCategory(slug){
  if(!movingImages||slug==='all'||!categories.some(c=>c.slug===slug))return;
  const ids=[...selected];
  if(!ids.length){endMoveMode();return;}
+ const destination=categories.find(c=>c.slug===slug);
+ if(ids.every(id=>photos.find(p=>p.id===id)?.category===slug)){
+  say('status','The selected photo'+(ids.length===1?' is':'s are')+' already in '+destination.label+'. Choose a different tab.');
+  return;
+ }
  const button=$('moveImage');
  button.disabled=true;
  try{
-  const {data,error}=await client.from('gallery_images').update({category:slug}).in('id',ids).select('id');
+  // The returned category verifies that the move was actually persisted.
+  const {data,error}=await client.from('gallery_images')
+   .update({category:slug}).in('id',ids).select('id,category');
   if(error)throw error;
-  if(!data||data.length!==ids.length)throw Error('Some photos were not moved. Refresh and try again.');
+  const updated=new Set((data||[]).filter(p=>p.category===slug).map(p=>p.id));
+  if(ids.some(id=>!updated.has(id)))throw Error('Some photos were not moved. Refresh and try again.');
+  // Keep the current source tab in view. Update the local gallery immediately
+  // after a confirmed save, so transferred photos disappear from this tab.
+  for(const photo of photos){
+   if(updated.has(photo.id))photo.category=slug;
+  }
+  selected.clear();
   endMoveMode();
-  viewCategory=slug;
-  document.querySelectorAll('[data-category]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.category===slug)));
-  await loadPhotos(true);
+  render();
   signalGalleryChange();
   showMoveRibbon();
-  say('status','');
- }catch(error){say('status','Could not move images: '+error.message);await loadPhotos(true);}
- finally{button.disabled=false;}
+  say('status',viewCategory==='all'
+   ? 'Moved to '+destination.label+'. The All tab continues to show photographs from every category.'
+   : '');
+ }catch(error){
+  say('status','Could not move images: '+error.message);
+  await loadPhotos(true);
+ }finally{button.disabled=false;}
 }
 function selectCategoryTab(slug){
  if(movingImages){void moveToCategory(slug);return;}
