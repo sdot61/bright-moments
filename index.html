@@ -6,7 +6,7 @@ async function loadCategoryTabs(){
  const c=window.BRIGHT_MOMENTS_SUPABASE||{};
  if(!c.url||!c.publishableKey||!window.supabase)return;
  try{
-  const client=window.supabase.createClient(c.url,c.publishableKey);
+  const client=window.supabase.createClient(c.url,c.publishableKey,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:'bright-moments-public-gallery'}});
   const {data,error}=await client.from('gallery_categories').select('slug,label,color').order('sort_order').order('label');
   if(error)throw error;
   categoryNames=(data||[]).map(p=>p.slug);
@@ -55,7 +55,7 @@ async function loadProducts(){
 async function loadManagedPhotos(){
  const c=window.BRIGHT_MOMENTS_SUPABASE||{};
  if(!c.url||!c.publishableKey||!window.supabase)return null;
- const client=window.supabase.createClient(c.url,c.publishableKey);
+ const client=window.supabase.createClient(c.url,c.publishableKey,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:'bright-moments-public-gallery'}});
  const [settings,records]=await Promise.all([
  client.from("gallery_settings").select("migrated").eq("id",1).maybeSingle(),
  client.from("gallery_images").select("*").order("sort_order",{ascending:true}).order("created_at",{ascending:true})
@@ -68,4 +68,19 @@ async function loadManagedPhotos(){
  }))};
 }
 const items=document.getElementById("items");let section="gallery",category="all";
-function render(){const shown=products.filter(p=>p.section===section&&(category==="all"||p.category===category));items.replaceChildren();if(!shown.length){const empty=document.createElement("p");empty.className="empty";empty.textContent=section==="store"?"Store items are coming soon.":"No pieces in this selection yet.";items.append(empty);return}for(const p of shown){const article=document.createElement("article");article.className="item";const photo=document.createElement("div");photo.className="photo";const img=document.createElement("img");img.src=p.file;img.alt=p.title;img.loading="lazy";photo.append(img);const name=document.createElement("h2");name.className="item-title";name.textContent=p.title;article.append(photo,name);if(section==="store"){const buy=document.createElement("button");buy.className="buy";buy.textContent="Price TBC · Buy";buy.addEventListener("click",()=>alert("Checkout is not available yet."));article.append(buy)}items.append(article)}}document.querySelectorAll("[data-section]").forEach(button=>{const change=()=>{section=button.dataset.section;category="all";document.querySelector(".subnav").classList.add("expanded");document.querySelectorAll("[data-section]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.section===section)));document.querySelectorAll("[data-category]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.category===category)));render()};button.addEventListener("mouseenter",change);button.addEventListener("click",change)});document.querySelectorAll("[data-category]").forEach(button=>{const change=()=>{category=button.dataset.category;document.querySelectorAll("[data-category]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.category===category)));render()};button.addEventListener("mouseenter",change);button.addEventListener("click",change)});loadProducts();</script></body></html>
+function render(){const shown=products.filter(p=>p.section===section&&(category==="all"||p.category===category));items.replaceChildren();if(!shown.length){const empty=document.createElement("p");empty.className="empty";empty.textContent=section==="store"?"Store items are coming soon.":"No pieces in this selection yet.";items.append(empty);return}for(const p of shown){const article=document.createElement("article");article.className="item";const photo=document.createElement("div");photo.className="photo";const img=document.createElement("img");img.src=p.file;img.alt=p.title;img.loading="lazy";photo.append(img);const name=document.createElement("h2");name.className="item-title";name.textContent=p.title;article.append(photo,name);if(section==="store"){const buy=document.createElement("button");buy.className="buy";buy.textContent="Price TBC · Buy";buy.addEventListener("click",()=>alert("Checkout is not available yet."));article.append(buy)}items.append(article)}}document.querySelectorAll("[data-section]").forEach(button=>{const change=()=>{section=button.dataset.section;category="all";document.querySelector(".subnav").classList.add("expanded");document.querySelectorAll("[data-section]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.section===section)));document.querySelectorAll("[data-category]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.category===category)));render()};button.addEventListener("mouseenter",change);button.addEventListener("click",change)});document.querySelectorAll("[data-category]").forEach(button=>{const change=()=>{category=button.dataset.category;document.querySelectorAll("[data-category]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.category===category)));render()};button.addEventListener("mouseenter",change);button.addEventListener("click",change)});
+const liveGalleryChannel=typeof BroadcastChannel==='function'?new BroadcastChannel('bright-moments-gallery'):null;
+let galleryReloadTask=null;
+function queueGalleryReload(){
+ if(galleryReloadTask!==null)return;
+ galleryReloadTask=setTimeout(()=>{galleryReloadTask=null;loadProducts()},150);
+}
+liveGalleryChannel?.addEventListener('message',event=>{
+ if(event.data?.type==='gallery-changed')queueGalleryReload();
+});
+window.addEventListener('storage',event=>{
+ if(event.key==='bright-moments-gallery-updated-v1')queueGalleryReload();
+});
+window.addEventListener('focus',queueGalleryReload);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)queueGalleryReload()});
+loadProducts();</script></body></html>
