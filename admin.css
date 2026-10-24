@@ -19,8 +19,6 @@ body.reordering .item{cursor:move}
 
 /* During session restoration show a neutral status, never a misleading login flash. */
 body[data-auth-state="checking"] #login,body[data-auth-state="checking"] #editor{display:none!important}
-body[data-auth-state="ready"] #authChecking{display:none!important}
-.session-check{text-align:center;max-width:600px;min-height:150px;margin:30px auto;font-size:18px;padding:35px 15px}
 
 /* Whole-cell selection and drag; the corner circle is only an indicator. */
 .item{cursor:grab;user-select:none;-webkit-user-select:none;touch-action:pan-y}
@@ -36,3 +34,12 @@ body[data-auth-state="ready"] #authChecking{display:none!important}
 body.reordering,body.reordering *{cursor:grabbing!important}
 .item:focus-visible{outline:2px solid #111;outline-offset:4px}
 @media(hover:none){.item .check{opacity:0}.item.selected .check{opacity:1}}
+
+.invite-panel{max-width:650px;margin:28px auto 30px;padding:20px 22px;border:1px solid #ddd;background:#fff}
+.invite-panel h2{font-size:22px;margin:0 0 12px}
+.invite-panel label{display:block;margin:0 0 9px}
+.invite-row{display:flex;gap:10px;align-items:stretch}
+.invite-row input{flex:1;min-width:0;border:1px solid #999;padding:12px}
+.invite-row button{margin:0;white-space:nowrap}
+#inviteMessage{min-height:20px;font-size:14px}
+@media(max-width:560px){.invite-row{flex-wrap:wrap}.invite-row button{width:100%}}
