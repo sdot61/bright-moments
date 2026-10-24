@@ -113,6 +113,7 @@ async function checkAuth(){
  show('editor',true);
  await loadCategories();
  await loadPhotos();
+ cleanPendingStorageFiles().then(result=>{if(result.pending)say('status','Some previously deleted Supabase image files are awaiting cleanup. They will be retried.');}).catch(error=>console.warn('Could not retry pending storage cleanup',error));
 }
 $('signin').addEventListener('submit',async event=>{
  event.preventDefault();
@@ -201,6 +202,32 @@ function signalGalleryChange(){
   localStorage.setItem(GALLERY_CHANGE_KEY,String(Date.now()));
  }catch(error){console.warn('Could not notify other open gallery tabs',error);}
 }
+// The DB trigger records storage files whenever their gallery entries are deleted.
+// This keeps failed file cleanups recoverable on the next owner sign-in.
+async function cleanPendingStorageFiles(){
+ if(!client||!currentAdminId||!idleCheck())return {removed:0,pending:0};
+ const {data,error}=await client.from('gallery_storage_cleanup')
+  .select('file_path').order('queued_at',{ascending:true}).limit(500);
+ if(error)throw error;
+ const pending=(data||[]).map(p=>p.file_path);
+ let removed=0,failed=0;
+ for(let i=0;i<pending.length;i+=100){
+  const batch=pending.slice(i,i+100);
+  let lastError=null;
+  for(let attempt=0;attempt<3;attempt++){
+   const response=await client.storage.from(bucket).remove(batch);
+   lastError=response.error;
+   if(!lastError)break;
+   if(attempt<2)await new Promise(resolve=>setTimeout(resolve,300*(attempt+1)));
+  }
+  if(lastError){failed+=batch.length;console.warn('Storage cleanup queued for retry',lastError);continue;}
+  const {error:queueError}=await client.from('gallery_storage_cleanup')
+   .delete().in('file_path',batch);
+  if(queueError){failed+=batch.length;console.warn('Could not mark storage cleanup complete',queueError);}
+  else removed+=batch.length;
+ }
+ return {removed,pending:failed};
+}
 let deletingPhotos=false;
 async function removeSelected(){
  if(!client||!currentAdminId||!idleCheck()||deletingPhotos)return;
@@ -222,27 +249,16 @@ async function removeSelected(){
   for(const id of deletedIds)selected.delete(id);
   render();
   signalGalleryChange();
-  // Old GitHub-backed photos have no Supabase Storage object: only their metadata is removed.
-  // New uploads live in Supabase Storage, so permanently remove those files as well.
-  const paths=deletedRows.map(p=>p.file_path).filter(p=>!p.startsWith('github:'));
-  const failed=[];
-  for(let i=0;i<paths.length;i+=100){
-   const batch=paths.slice(i,i+100);
-   let error=null;
-   for(let attempt=0;attempt<3;attempt++){
-    const response=await client.storage.from(bucket).remove(batch);
-    error=response.error;
-    if(!error)break;
-    if(attempt<2)await new Promise(resolve=>setTimeout(resolve,300*(attempt+1)));
-   }
-   if(error)failed.push(...batch);
-  }
-  if(failed.length){
-   say('status',deletedRows.length+' photo(s) removed from the website, but '+failed.length+
-       ' Supabase file(s) could not be deleted. Their cleanup needs to be retried.');
+  // GitHub-backed photos have no Supabase Storage object, only a metadata record.
+  // Supabase-backed photos are queued by a database trigger for actual file deletion.
+  let result;
+  try{result=await cleanPendingStorageFiles();}
+  catch(error){console.warn('Gallery file cleanup will be retried later',error);result={removed:0,pending:1};}
+  if(result.pending){
+   say('status',deletedRows.length+' photo(s) removed from the website. Supabase file cleanup is pending and will retry on the next editor sign-in.');
   }else{
    say('status',deletedRows.length+' photo(s) removed from the editor and public gallery.'+
-      (paths.length?' '+paths.length+' Supabase file(s) deleted.':''));
+    (result.removed?' '+result.removed+' Supabase file(s) permanently deleted.':''));
   }
  }catch(error){
   say('status','Deletion failed; photos have not been removed: '+error.message);
