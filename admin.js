@@ -248,11 +248,49 @@ const img=document.createElement('img');img.src=url(p.file_path);img.alt=p.title
 const indicator=document.createElement('span');indicator.className='check';indicator.setAttribute('aria-hidden','true');indicator.textContent=selected.has(p.id)?'✓':'';
 attachReorderEvents(article,p.id);
 photo.append(img,indicator);
-const title=document.createElement('h3');title.textContent=p.title;
+const title=document.createElement('h3');title.textContent=p.title;title.className='editable-photo-title';title.tabIndex=0;title.setAttribute('role','button');title.setAttribute('aria-label','Edit title: '+p.title);title.setAttribute('title','Edit title');title.addEventListener('click',event=>{event.stopPropagation();editPhotoTitle(title,p);});title.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();editPhotoTitle(title,p);}});
 const meta=document.createElement('p');meta.textContent=p.section+' · '+(categories.find(c=>c.slug===p.category)?.label||p.category);
 article.append(photo,title,meta);container.append(article);
 }
 if(!container.children.length)container.textContent='No photographs in this selection yet.';
+}
+function editPhotoTitle(heading,photo){
+ if(heading.dataset.editing==='true')return;
+ heading.dataset.editing='true';
+ const original=photo.title;
+ const input=document.createElement('input');
+ input.type='text';input.className='photo-title-input';input.maxLength=160;
+ input.required=true;input.value=original;input.setAttribute('aria-label','Photograph title');
+ heading.replaceWith(input);
+ input.focus();input.select();
+ let finished=false;
+ const restore=(name)=>{
+  photo.title=name;
+  heading.textContent=name;
+  heading.setAttribute('aria-label','Edit title: '+name);
+  delete heading.dataset.editing;
+  input.replaceWith(heading);
+ };
+ const save=async()=>{
+  if(finished)return;
+  const name=input.value.trim();
+  if(!name||name.length>160){say('status','Photo titles must be between 1 and 160 characters.');input.focus();return;}
+  finished=true;input.disabled=true;
+  if(name!==original){
+   const {error}=await client.from('gallery_images').update({title:name}).eq('id',photo.id);
+   if(error){finished=false;input.disabled=false;say('status','Could not save title: '+error.message);input.focus();return;}
+   signalGalleryChange();
+   say('status','Photograph title saved.');
+  }
+  restore(name);
+ };
+ input.addEventListener('keydown',event=>{
+  event.stopPropagation();
+  if(event.key==='Enter'){event.preventDefault();void save();}
+  if(event.key==='Escape'){event.preventDefault();finished=true;restore(original);}
+ });
+ input.addEventListener('pointerdown',event=>event.stopPropagation());
+ input.addEventListener('blur',()=>{if(!finished)void save()});
 }
 async function optimize(file){
 const bitmap=await createImageBitmap(file);
@@ -452,7 +490,7 @@ function cleanupDrag(article){
 }
 function attachReorderEvents(article,id){
  article.addEventListener('pointerdown',event=>{
-  if(event.button!==0||activeDrag||savingReorder)return;
+  if(event.button!==0||activeDrag||savingReorder||event.target.closest('.editable-photo-title,.photo-title-input,input,button'))return;
   activeDrag={id,pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,moved:false,target:null};
   // Pointer capture allows dropping on a different cell without losing the held pointer.
   try{article.setPointerCapture(event.pointerId)}catch{}
