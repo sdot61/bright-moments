@@ -76,12 +76,12 @@ for(const p of visiblePhotos()){
 const article=document.createElement('article');article.className='item';article.dataset.photoId=p.id;article.draggable=selected.has(p.id);article.tabIndex=0;if(selected.has(p.id))article.classList.add('selected');
 const photo=document.createElement('div');photo.className='photo';
 const img=document.createElement('img');img.src=url(p.file_path);img.alt=p.title;img.loading='lazy';
-const button=document.createElement('button');button.className='check';button.type='button';button.textContent=selected.has(p.id)?'✓':'○';button.setAttribute('aria-label','Select '+p.title);button.setAttribute('aria-pressed',String(selected.has(p.id)));
-button.onclick=()=>{if(selected.has(p.id))selected.delete(p.id);else selected.add(p.id);const on=selected.has(p.id);button.textContent=on?'✓':'○';button.setAttribute('aria-pressed',String(on));article.classList.toggle('selected',on);article.draggable=on;};
+const button=document.createElement('button');button.className='check';button.type='button';button.textContent='✓';button.setAttribute('aria-label','Select '+p.title);button.setAttribute('aria-pressed',String(selected.has(p.id)));
+button.onclick=()=>{if(selected.has(p.id))selected.delete(p.id);else selected.add(p.id);const on=selected.has(p.id);button.textContent='✓';button.setAttribute('aria-pressed',String(on));article.classList.toggle('selected',on);article.draggable=on;};
 attachReorderEvents(article,p.id);
 photo.append(img,button);
 const title=document.createElement('h3');title.textContent=p.title;
-const meta=document.createElement('p');meta.textContent=p.section+' · '+p.category;
+const meta=document.createElement('p');meta.textContent=p.section+' · '+(categories.find(c=>c.slug===p.category)?.label||p.category);
 article.append(photo,title,meta);container.append(article);
 }
 if(!container.children.length)container.textContent='No photographs in this selection yet.';
