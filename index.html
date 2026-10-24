@@ -31,26 +31,22 @@ async function loadCategoryTabs(){
 }
 async function loadProducts(){
  await loadCategoryTabs();
- let managed=null;
- try{managed=await loadManagedPhotos()}catch(e){console.warn("Managed gallery load failed",e)}
- if(managed&&managed.migrated){products=managed.photos;render();return}
  try{
- const response=await fetch(repoTree,{headers:{Accept:"application/vnd.github+json"}});
- if(!response.ok)throw Error("Repository listing unavailable");
- const data=await response.json();
- if(data.truncated)throw Error("Repository listing incomplete");
- const original=(data.tree||[]).filter(f=>f.type==="blob"&&f.size>100&&/\.(jpe?g|png|webp|gif|avif)$/i.test(f.path))
- .map(f=>{const parts=f.path.split("/");if(parts.length<3)return null;
- const section=parts[0].toLowerCase(),category=parts[1].toLowerCase();
- if(!["gallery","store"].includes(section)||!categoryNames.includes(category))return null;
- const filename=parts[parts.length-1];
- return {file:parts.map(encodeURIComponent).join("/"),
- title:filename.replace(/\.[^.]+$/,"").replace(/[_-]+/g," "),category,section}
- }).filter(Boolean);
- const stored=managed?managed.photos:[];
- products=[...stored,...original.filter(p=>!stored.some(x=>x.section===p.section&&x.category===p.category&&x.title===p.title))];
- render()
- }catch(e){console.warn("GitHub listing unavailable",e);products=managed?managed.photos:[];render()}
+  const managed=await loadManagedPhotos();
+  if(!managed)throw Error('Gallery connection is not configured.');
+  // Once Supabase manages published photos, never revive deleted GitHub listings.
+  products=managed.photos;
+  render();
+ }catch(error){
+  console.warn('Managed gallery unavailable',error);
+  if(!products.length){
+   items.replaceChildren();
+   const message=document.createElement('p');
+   message.className='empty';
+   message.textContent='The gallery is temporarily unavailable. Please try again shortly.';
+   items.append(message);
+  }
+ }
 }
 async function loadManagedPhotos(){
  const c=window.BRIGHT_MOMENTS_SUPABASE||{};
