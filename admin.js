@@ -9,7 +9,7 @@ const LAST_ACTIVITY_KEY='bright-moments-owner-last-activity-v1';
 let currentAdminId=null,lastActivityWrite=0,logoutInProgress=false,recoveryMode=false;
 const signInButton=$('signin').querySelector('button');
 function showReadyPage(){document.body.dataset.authState='ready';}
-const authRedirectType=(()=>{
+let authRedirectType=(()=>{
  const hash=new URLSearchParams(location.hash.slice(1));
  const query=new URLSearchParams(location.search);
  const type=hash.get('type')||query.get('type');
@@ -154,8 +154,11 @@ async function checkAuth(){
  if(userError||!user||user.id!==currentAdminId){await stopEditing();return;}
  const result=await client.from('site_admins').select('user_id').eq('user_id',user.id).maybeSingle();
  if(result.error||!result.data){
+  const {data:request}=await client.from('editor_access_requests').select('status').eq('user_id',user.id).maybeSingle();
   await stopEditing();
-  say('message','This account is not authorized to manage Bright Moments.');
+  if(request?.status==='pending')say('message','Your account was created, but access is pending approval by a site editor.');
+  else if(request?.status==='denied')say('message','Your editing access has not been approved.');
+  else say('message','This account is not authorized to manage Bright Moments.');
   return;
  }
  if(!idleCheck())return;
@@ -225,6 +228,7 @@ function recoverForm(kind='recovery'){
    if(heading)heading.textContent='Owner sign in';
    localStorage.removeItem(LAST_ACTIVITY_KEY);
    history.replaceState(null,'',location.pathname);
+   authRedirectType=null;
    await client.auth.signOut({scope:'local'});
    clearEditorAccess();
    say('message','Password saved. Sign in with your email and new password.');
