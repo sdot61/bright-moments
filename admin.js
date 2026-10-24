@@ -8,6 +8,7 @@ const IDLE_DURATION_MS=24*60*60*1000;
 const LAST_ACTIVITY_KEY='bright-moments-owner-last-activity-v1';
 let currentAdminId=null,lastActivityWrite=0,logoutInProgress=false,recoveryMode=false;
 const signInButton=$('signin').querySelector('button');
+function showReadyPage(){document.body.dataset.authState='ready';}
 const isRecoveryRedirect=()=>{
  const hash=new URLSearchParams(location.hash.slice(1));
  const query=new URLSearchParams(location.search);
@@ -71,6 +72,7 @@ window.addEventListener('storage',event=>{
 if(!cfg.url||!cfg.publishableKey){
  say('message','Setup pending: connect the Supabase project and add its public URL and publishable key to supabase-config.js.');
  signInButton.disabled=true;
+ showReadyPage();
 }else{
  client=supabase.createClient(cfg.url,cfg.publishableKey,{
   auth:{detectSessionInUrl:true,autoRefreshToken:true,persistSession:true,storageKey:'bright-moments-owner-session-v1'}
@@ -82,7 +84,12 @@ if(!cfg.url||!cfg.publishableKey){
  if(!isRecoveryRedirect()){
   signInButton.disabled=true;
   restoreAdminSession().catch(error=>say('message','Could not restore your session: '+error.message))
-  .finally(()=>{signInButton.disabled=false});
+  .finally(()=>{signInButton.disabled=false;showReadyPage()});
+ }else{
+  // Password-reset redirects are handled by Supabase's recovery callback.
+  setTimeout(()=>{if(document.body.dataset.authState==='checking'){
+   showReadyPage();say('message','The password-reset link could not be verified. You can request a new one.');
+  }},6000);
  }
 }
 async function restoreAdminSession(){
@@ -141,6 +148,7 @@ const {error}=await client.auth.resetPasswordForEmail(email,{redirectTo:location
 say('message',error?error.message:'If this account exists, a password-reset email will be sent.');
 });
 function recoverForm(){
+showReadyPage();
 show('login',true);show('editor',false);
 $('signin').hidden=true;$('forgot').hidden=true;
 let form=document.getElementById('recover');
