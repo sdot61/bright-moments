@@ -16,3 +16,8 @@ body.reordering .item{cursor:move}
 @media(max-width:560px){.create-tab-row{flex-wrap:wrap}.create-tab-row button{width:100%}}
 
 @media(hover:none){.check{opacity:1}}
+
+/* During session restoration show a neutral status, never a misleading login flash. */
+body[data-auth-state="checking"] #login,body[data-auth-state="checking"] #editor{display:none!important}
+body[data-auth-state="ready"] #authChecking{display:none!important}
+.session-check{text-align:center;max-width:600px;min-height:150px;margin:30px auto;font-size:18px;padding:35px 15px}
