@@ -392,15 +392,6 @@ async function removeSelected(){
  }
 }
 $('delete').addEventListener('click',removeSelected);
-$('rename').addEventListener('click',async()=>{
-const chosen=photos.filter(p=>selected.has(p.id));
-if(chosen.length!==1){say('status','Select exactly one photograph to rename.');return;}
-const title=prompt('New photo title:',chosen[0].title);
-if(title===null)return;
-if(!title.trim()||title.trim().length>160){say('status','Please enter a title between 1 and 160 characters.');return;}
-const {error}=await client.from('gallery_images').update({title:title.trim()}).eq('id',chosen[0].id);
-if(error)say('status',error.message);else{signalGalleryChange();await loadPhotos();}
-});
 
 function visiblePhotos(){
  return photos.filter(p=>p.section===viewSection&&(viewCategory==='all'||p.category===viewCategory))
@@ -524,6 +515,8 @@ $('createTab').addEventListener('submit',async e=>{
 });
 
 
+// Photo interactions: normal click selects; hold-and-drag rearranges.
+// Global pointer tracking avoids losing the drag when the pointer leaves a photo.
 let activeDrag=null;
 function highlightDrop(id){
  document.querySelectorAll('.item.drag-target').forEach(el=>el.classList.remove('drag-target'));
@@ -541,57 +534,73 @@ function updateCellSelection(article,id,on){
 function toggleCellSelection(article,id){
  updateCellSelection(article,id,!selected.has(id));
 }
-function cleanupDrag(article){
+function syncVisibleSelections(){
+ document.querySelectorAll('.item').forEach(article=>{
+  updateCellSelection(article,article.dataset.photoId,selected.has(article.dataset.photoId));
+ });
+}
+function findDropTarget(x,y){
+ const element=document.elementFromPoint(x,y);
+ return element?.closest('.item')?.dataset.photoId||null;
+}
+function finishPhotoDrag(event,cancel=false){
+ const drag=activeDrag;
+ if(!drag||event.pointerId!==drag.pointerId)return;
  activeDrag=null;
- article.classList.remove('drag-source');
+ document.removeEventListener('pointermove',trackPhotoDrag);
+ document.removeEventListener('pointerup',finishPhotoDrag);
+ document.removeEventListener('pointercancel',cancelPhotoDrag);
+ drag.article.classList.remove('drag-source');
  highlightDrop(null);
  document.body.classList.remove('reordering');
+ if(cancel||!drag.moved)return;
+ // A drop should never also toggle the selection through a synthetic click.
+ drag.article.dataset.justDragged='true';
+ setTimeout(()=>{delete drag.article.dataset.justDragged;},0);
+ if(!selected.has(drag.id)){
+  selected.clear();
+  selected.add(drag.id);
+  syncVisibleSelections();
+ }
+ const target=findDropTarget(event.clientX,event.clientY)||drag.target;
+ if(target&&target!==drag.id)void reorderSelected(drag.id,target);
+}
+function cancelPhotoDrag(event){finishPhotoDrag(event,true);}
+function trackPhotoDrag(event){
+ const drag=activeDrag;
+ if(!drag||drag.pointerId!==event.pointerId)return;
+ if(!drag.moved&&Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)<7)return;
+ if(!drag.moved){
+  drag.moved=true;
+  drag.article.classList.add('drag-source');
+  document.body.classList.add('reordering');
+ }
+ if(event.cancelable)event.preventDefault();
+ const target=findDropTarget(event.clientX,event.clientY);
+ drag.target=target&&target!==drag.id?target:null;
+ highlightDrop(drag.target);
 }
 function attachReorderEvents(article,id){
+ article.addEventListener('click',event=>{
+  if(event.target.closest('.editable-photo-title,.photo-title-input,input,button'))return;
+  if(article.dataset.justDragged==='true')return;
+  if(savingReorder)return;
+  toggleCellSelection(article,id);
+ });
  article.addEventListener('pointerdown',event=>{
-  if(event.button!==0||activeDrag||savingReorder||event.target.closest('.editable-photo-title,.photo-title-input,input,button'))return;
-  activeDrag={id,pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,moved:false,target:null};
-  // Pointer capture allows dropping on a different cell without losing the held pointer.
-  try{article.setPointerCapture(event.pointerId)}catch{}
+  if(event.button!==0||event.isPrimary===false||activeDrag||savingReorder)return;
+  if(event.target.closest('.editable-photo-title,.photo-title-input,input,button'))return;
+  activeDrag={id,article,pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,moved:false,target:null};
+  document.addEventListener('pointermove',trackPhotoDrag,{passive:false});
+  document.addEventListener('pointerup',finishPhotoDrag);
+  document.addEventListener('pointercancel',cancelPhotoDrag);
  });
- article.addEventListener('pointermove',event=>{
-  const drag=activeDrag;
-  if(!drag||drag.pointerId!==event.pointerId||drag.id!==id)return;
-  if(!drag.moved&&Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)<8)return;
-  if(!drag.moved){
-   drag.moved=true;
-   article.classList.add('drag-source');
-   document.body.classList.add('reordering');
-  }
-  event.preventDefault();
-  const element=document.elementFromPoint(event.clientX,event.clientY);
-  const under=element?.closest('.item');
-  drag.target=under?.dataset.photoId||null;
-  highlightDrop(drag.target!==id?drag.target:null);
- });
- article.addEventListener('pointerup',event=>{
-  const drag=activeDrag;
-  if(!drag||drag.pointerId!==event.pointerId||drag.id!==id)return;
-  const wasDragged=drag.moved,target=drag.target;
-  cleanupDrag(article);
-  if(!wasDragged){
-   toggleCellSelection(article,id);
-  }else{
-   if(!selected.has(id)){
-    selected.clear();
-    // Refresh the visible checkmarks without recreating DOM during a drag.
-    document.querySelectorAll('.item.selected').forEach(el=>{
-     updateCellSelection(el,el.dataset.photoId,false);
-    });
-    updateCellSelection(article,id,true);
-   }
-   if(target&&target!==id)void reorderSelected(id,target);
-  }
- });
- article.addEventListener('pointercancel',()=>{if(activeDrag?.id===id)cleanupDrag(article)});
  article.addEventListener('keydown',event=>{
+  if(event.target!==article)return; // Editing the title must not select the cell.
   if(event.key===' '||event.key==='Enter'){
-   event.preventDefault();toggleCellSelection(article,id);return;
+   event.preventDefault();
+   toggleCellSelection(article,id);
+   return;
   }
   if(!selected.has(id)||!['ArrowLeft','ArrowRight'].includes(event.key))return;
   event.preventDefault();
