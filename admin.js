@@ -3,48 +3,134 @@ const $=id=>document.getElementById(id);
 const show=(id,on)=>$(id).hidden=!on;
 let client=null,photos=[],categories=[],selected=new Set(),viewSection="gallery",viewCategory="all",draggedId=null,savingReorder=false;
 const say=(id,message)=>$(id).textContent=message;
-let signedInUsingForm=false;
+// Keep editor sessions across refreshes; expire after 24 hours with no owner activity.
+const IDLE_DURATION_MS=24*60*60*1000;
+const LAST_ACTIVITY_KEY='bright-moments-owner-last-activity-v1';
+let currentAdminId=null,lastActivityWrite=0,logoutInProgress=false,recoveryMode=false;
 const signInButton=$('signin').querySelector('button');
 const isRecoveryRedirect=()=>{
  const hash=new URLSearchParams(location.hash.slice(1));
  const query=new URLSearchParams(location.search);
  return hash.get('type')==='recovery'||query.get('type')==='recovery'||query.has('code');
 };
+function readLastActivity(){
+ try{
+  const record=JSON.parse(localStorage.getItem(LAST_ACTIVITY_KEY)||'null');
+  return record&&typeof record.userId==='string'&&Number.isFinite(record.at)?record:null;
+ }catch{return null;}
+}
+function saveLastActivity(userId){
+ const now=Date.now();
+ localStorage.setItem(LAST_ACTIVITY_KEY,JSON.stringify({userId,at:now}));
+ lastActivityWrite=now;
+}
+function clearEditorAccess(){
+ currentAdminId=null;
+ selected.clear();
+ show('editor',false);
+ show('login',true);
+}
+async function stopEditing(expired=false){
+ if(logoutInProgress)return;
+ logoutInProgress=true;
+ clearEditorAccess();
+ localStorage.removeItem(LAST_ACTIVITY_KEY);
+ try{
+  if(client){
+   const {error}=await client.auth.signOut({scope:'local'});
+   if(error)console.warn('Supabase sign-out did not finish:',error);
+  }
+ }catch(error){console.warn('Supabase sign-out error:',error)}
+ finally{
+  logoutInProgress=false;
+  if(expired)say('message','Your session expired after 24 hours without activity. Please sign in again.');
+ }
+}
+function idleCheck(){
+ if(!currentAdminId)return false;
+ const record=readLastActivity(),now=Date.now();
+ if(!record||record.userId!==currentAdminId||record.at>now||now-record.at>=IDLE_DURATION_MS){
+  void stopEditing(true);
+  return false;
+ }
+ return true;
+}
+function recordUserActivity(){
+ if(!idleCheck())return;
+ if(Date.now()-lastActivityWrite>=15000)saveLastActivity(currentAdminId);
+}
+for(const eventName of ['pointerdown','pointermove','keydown','wheel','touchstart','scroll']){
+ document.addEventListener(eventName,recordUserActivity,{passive:true});
+}
+setInterval(()=>{if(currentAdminId)idleCheck()},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentAdminId)idleCheck()});
+window.addEventListener('focus',()=>{if(currentAdminId)idleCheck()});
+window.addEventListener('storage',event=>{
+ if(event.key===LAST_ACTIVITY_KEY&&currentAdminId)idleCheck();
+});
 if(!cfg.url||!cfg.publishableKey){
  say('message','Setup pending: connect the Supabase project and add its public URL and publishable key to supabase-config.js.');
  signInButton.disabled=true;
 }else{
- client=supabase.createClient(cfg.url,cfg.publishableKey,{auth:{detectSessionInUrl:true,autoRefreshToken:true,persistSession:false}});
- // Only a password-reset callback may show an authenticated recovery form automatically.
- // INITIAL_SESSION, SIGNED_IN and token-refresh events must never open the editor.
+ client=supabase.createClient(cfg.url,cfg.publishableKey,{
+  auth:{detectSessionInUrl:true,autoRefreshToken:true,persistSession:true,storageKey:'bright-moments-owner-session-v1'}
+ });
  client.auth.onAuthStateChange(event=>{
-  if(event==='PASSWORD_RECOVERY')recoverForm();
-  if(event==='SIGNED_OUT'){signedInUsingForm=false;show('editor',false);show('login',true);}
+  if(event==='PASSWORD_RECOVERY'){recoveryMode=true;recoverForm();}
+  else if(event==='SIGNED_OUT'){clearEditorAccess();}
  });
  if(!isRecoveryRedirect()){
-  // Clear any older Supabase session silently restored by a previous site version.
   signInButton.disabled=true;
-  client.auth.signOut({scope:'local'}).then(({error})=>{
-   if(error)say('message','Could not clear the previous session. Please refresh to try again.');
-   else signInButton.disabled=false;
-  }).catch(()=>say('message','Could not prepare a new login. Please refresh to try again.'));
+  restoreAdminSession().catch(error=>say('message','Could not restore your session: '+error.message))
+  .finally(()=>{signInButton.disabled=false});
  }
 }
-async function checkAuth(){
-if(!signedInUsingForm)return;
-const {data:{user}}=await client.auth.getUser();
-if(!user){show('login',true);show('editor',false);return;}
-const result=await client.from('site_admins').select('user_id').eq('user_id',user.id).maybeSingle();
-if(result.error||!result.data){say('message','This account is not authorized to manage Bright Moments.');show('editor',false);show('login',true);return;}
-show('login',false);show('editor',true);await loadCategories();await loadPhotos();
+async function restoreAdminSession(){
+ const {data:{session},error}=await client.auth.getSession();
+ if(error)throw error;
+ if(!session){localStorage.removeItem(LAST_ACTIVITY_KEY);return;}
+ const record=readLastActivity(),now=Date.now();
+ if(!record||record.userId!==session.user.id||record.at>now||now-record.at>=IDLE_DURATION_MS){
+  await stopEditing(true);
+  return;
+ }
+ currentAdminId=session.user.id;
+ lastActivityWrite=record.at;
+ await checkAuth();
 }
-$('signin').addEventListener('submit',async e=>{
-e.preventDefault();if(!client)return;
-say('message','Signing in…');
-const {error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});
-signedInUsingForm=!error;
-say('message',error?'Could not sign in. Please check your credentials.':'');
-if(!error)await checkAuth();
+async function checkAuth(){
+ if(!currentAdminId||!idleCheck())return;
+ const {data:{user},error:userError}=await client.auth.getUser();
+ if(userError||!user||user.id!==currentAdminId){await stopEditing();return;}
+ const result=await client.from('site_admins').select('user_id').eq('user_id',user.id).maybeSingle();
+ if(result.error||!result.data){
+  await stopEditing();
+  say('message','This account is not authorized to manage Bright Moments.');
+  return;
+ }
+ if(!idleCheck())return;
+ show('login',false);
+ show('editor',true);
+ await loadCategories();
+ await loadPhotos();
+}
+$('signin').addEventListener('submit',async event=>{
+ event.preventDefault();
+ if(!client)return;
+ signInButton.disabled=true;
+ say('message','Signing in…');
+ try{
+  const {data,error}=await client.auth.signInWithPassword({
+   email:$('email').value.trim(),password:$('password').value
+  });
+  if(error)throw error;
+  if(!data.user)throw Error('No user returned from the sign-in request.');
+  currentAdminId=data.user.id;
+  saveLastActivity(currentAdminId);
+  say('message','');
+  await checkAuth();
+ }catch(error){say('message','Could not sign in. Please check your credentials.');}
+ finally{signInButton.disabled=false;}
 });
 $('forgot').addEventListener('click',async()=>{
 if(!client)return;
@@ -62,7 +148,7 @@ form.addEventListener('submit',async e=>{e.preventDefault();const {error}=await 
 }
 say('message','Enter your new password.');
 }
-$('logout').addEventListener('click',async()=>{signedInUsingForm=false;await client.auth.signOut();selected.clear();show('login',true);show('editor',false)});
+$('logout').addEventListener('click',()=>{void stopEditing()});
 const bucket='bright-moments-images';
 function url(path){if(path.startsWith('github:'))return 'https://raw.githubusercontent.com/sdot61/bright-moments/main/'+path.slice(7).split('/').map(encodeURIComponent).join('/');return client.storage.from(bucket).getPublicUrl(path).data.publicUrl;}
 async function loadPhotos(keepSelection=false){
