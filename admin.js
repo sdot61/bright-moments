@@ -26,10 +26,11 @@ function readLastActivity(){
   return record&&typeof record.userId==='string'&&Number.isFinite(record.at)?record:null;
  }catch{return null;}
 }
-function saveLastActivity(userId){
- const now=Date.now();
- localStorage.setItem(LAST_ACTIVITY_KEY,JSON.stringify({userId,at:now}));
- lastActivityWrite=now;
+function saveLastActivity(userId,when=Date.now()){
+ const at=Number(when);
+ try{localStorage.setItem(LAST_ACTIVITY_KEY,JSON.stringify({userId,at}));}
+ catch(error){console.warn('Cannot persist editor activity locally',error);}
+ lastActivityWrite=at;
 }
 function clearEditorAccess(){
  currentAdminId=null;
@@ -90,8 +91,11 @@ if(!cfg.url||!cfg.publishableKey){
  });
  if(!isRecoveryRedirect()){
   signInButton.disabled=true;
-  restoreAdminSession().catch(error=>say('message','Could not restore your session: '+error.message))
-  .finally(()=>{signInButton.disabled=false;showReadyPage()});
+  restoreAdminSession().catch(error=>{
+   console.warn('Could not restore editor session',error);
+   say('message','Could not restore your session. Please sign in again.');
+   clearEditorAccess();
+  }).finally(()=>{signInButton.disabled=false;showReadyPage()});
  }else{
   // Password-reset redirects are handled by Supabase's recovery callback.
   setTimeout(()=>{if(document.body.dataset.authState==='checking'){
@@ -100,16 +104,48 @@ if(!cfg.url||!cfg.publishableKey){
  }
 }
 async function restoreAdminSession(){
- const {data:{session},error}=await client.auth.getSession();
+ let {data:{session},error}=await client.auth.getSession();
  if(error)throw error;
- if(!session){localStorage.removeItem(LAST_ACTIVITY_KEY);return;}
- const record=readLastActivity(),now=Date.now();
- if(!record||record.userId!==session.user.id||record.at>now||now-record.at>=IDLE_DURATION_MS){
+ // Upgrade a session created by the earlier editor without forcing another login.
+ if(!session){
+  try{
+   const legacyKey='sb-'+new URL(cfg.url).hostname.split('.')[0]+'-auth-token';
+   const old=JSON.parse(localStorage.getItem(legacyKey)||'null');
+   if(old?.access_token&&old?.refresh_token){
+    const {data,migrationError,error:upgradeError}=await client.auth.setSession({
+     access_token:old.access_token,refresh_token:old.refresh_token
+    });
+    if(!migrationError&&!upgradeError&&data?.session){
+     session=data.session;
+     localStorage.removeItem(legacyKey);
+    }
+   }
+  }catch(error){console.warn('Legacy editor session could not be restored',error);}
+ }
+ if(!session){
+  localStorage.removeItem(LAST_ACTIVITY_KEY);
+  clearEditorAccess();
+  return;
+ }
+ const record=readLastActivity(),now=Date.now(),id=session.user.id;
+ let lastUsed=record?.userId===id?record.at:null;
+ if(lastUsed===null){
+  // For existing users upgraded from the older login scheme, use the Auth
+  // session's verified last sign-in time rather than discarding a live session.
+  const signInAt=Date.parse(session.user.last_sign_in_at||'');
+  const sessionStart=Number(session.created_at)*1000;
+  const baseline=Number.isFinite(signInAt)?signInAt:sessionStart;
+  if(Number.isFinite(baseline)&&baseline>0&&baseline<=now){
+   lastUsed=baseline;
+   saveLastActivity(id,baseline);
+  }
+ }
+ if(lastUsed===null||lastUsed>now||now-lastUsed>=IDLE_DURATION_MS){
   await stopEditing(true);
   return;
  }
- currentAdminId=session.user.id;
- lastActivityWrite=record.at;
+ currentAdminId=id;
+ lastActivityWrite=lastUsed;
  await checkAuth();
 }
 async function checkAuth(){
