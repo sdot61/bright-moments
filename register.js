@@ -6,9 +6,6 @@ function tell(text){message.textContent=text;}
 if(!/^[a-zA-Z0-9_-]{43}$/.test(token)){
  form.hidden=true;
  tell('This registration link is invalid. Ask the site owner for a new link.');
-}else{
- // Remove the registration token from the visible address bar after retaining it in memory.
- history.replaceState(null,'',location.pathname);
 }
 form.addEventListener('submit',async event=>{
  event.preventDefault();
@@ -26,6 +23,7 @@ form.addEventListener('submit',async event=>{
   const result=await response.json();
   if(!response.ok)throw Error(result.message||'Could not create the account.');
   form.hidden=true;
+  history.replaceState(null,'',location.pathname);
   tell(result.message);
  }catch(error){
   tell(error.message||'Unable to create account. Please try again.');
