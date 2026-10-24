@@ -163,6 +163,7 @@ async function checkAuth(){
  show('editor',true);
  await loadCategories();
  await loadPhotos();
+ await loadAccessRequests();
  cleanPendingStorageFiles().then(result=>{if(result.pending)say('status','Some previously deleted Supabase image files are awaiting cleanup. They will be retried.');}).catch(error=>console.warn('Could not retry pending storage cleanup',error));
 }
 $('signin').addEventListener('submit',async event=>{
@@ -402,6 +403,60 @@ function visiblePhotos(){
   .sort((a,b)=>a.sort_order-b.sort_order||a.created_at.localeCompare(b.created_at));
 }
 
+
+let movingImages=false;
+let moveNoticeTimer=null;
+function endMoveMode(){
+ movingImages=false;
+ document.body.classList.remove('moving-images');
+ $('moveImage').setAttribute('aria-pressed','false');
+}
+function showMoveRibbon(){
+ let banner=$('moveConfirmation');
+ if(!banner){
+  banner=document.createElement('div');
+  banner.id='moveConfirmation';
+  banner.setAttribute('role','status');
+  banner.setAttribute('aria-live','polite');
+  banner.textContent='Image has been moved';
+  banner.hidden=true;
+  document.body.append(banner);
+ }
+ if(moveNoticeTimer)clearTimeout(moveNoticeTimer);
+ banner.hidden=false;
+ moveNoticeTimer=setTimeout(()=>{banner.hidden=true;moveNoticeTimer=null;},2600);
+}
+$('moveImage').addEventListener('click',()=>{
+ if(movingImages){endMoveMode();return;}
+ if(!selected.size){say('status','Select one or more photos to move.');return;}
+ movingImages=true;
+ document.body.classList.add('moving-images');
+ $('moveImage').setAttribute('aria-pressed','true');
+});
+async function moveToCategory(slug){
+ if(!movingImages||slug==='all'||!categories.some(c=>c.slug===slug))return;
+ const ids=[...selected];
+ if(!ids.length){endMoveMode();return;}
+ const button=$('moveImage');
+ button.disabled=true;
+ try{
+  const {data,error}=await client.from('gallery_images').update({category:slug}).in('id',ids).select('id');
+  if(error)throw error;
+  if(!data||data.length!==ids.length)throw Error('Some photos were not moved. Refresh and try again.');
+  endMoveMode();
+  viewCategory=slug;
+  document.querySelectorAll('[data-category]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.category===slug)));
+  await loadPhotos(true);
+  signalGalleryChange();
+  showMoveRibbon();
+  say('status','');
+ }catch(error){say('status','Could not move images: '+error.message);await loadPhotos(true);}
+ finally{button.disabled=false;}
+}
+function selectCategoryTab(slug){
+ if(movingImages){void moveToCategory(slug);return;}
+ changeCategory(slug);
+}
 const palette=['#f2a277','#c9b4dc','#e9a4a9','#f2d36b','#b6d6a0'];
 function changeCategory(next){
  viewCategory=next;
@@ -423,7 +478,7 @@ async function loadCategories(){
  nav.replaceChildren();
  const all=document.createElement('button');all.type='button';all.dataset.category='all';all.textContent='All';all.style.backgroundColor='#b6d6a0';
  
- all.addEventListener('click',()=>changeCategory('all'));nav.append(all);
+ all.addEventListener('click',()=>selectCategoryTab('all'));nav.append(all);
  const dropdown=$('category');const previous=dropdown.value;
  dropdown.replaceChildren();
  for(const c of categories){
@@ -431,7 +486,7 @@ async function loadCategories(){
   const button=document.createElement('button');button.type='button';button.dataset.category=c.slug;button.textContent=c.label;
   button.style.backgroundColor=/^#[0-9a-fA-F]{6}$/.test(c.color)?c.color:'#b6d6a0';
   
-  button.addEventListener('click',()=>changeCategory(c.slug));
+  button.addEventListener('click',()=>selectCategoryTab(c.slug));
   nav.append(button);
  }
  if(categories.some(c=>c.slug===previous))dropdown.value=previous;
@@ -581,31 +636,83 @@ document.querySelectorAll('[data-section]').forEach(button=>{
  button.addEventListener('click',change);
 });
 
-$('inviteEditorForm').addEventListener('submit',async event=>{
- event.preventDefault();
- if(!client||!currentAdminId||!idleCheck())return;
- const input=$('inviteEmail');
- const email=input.value.trim().toLowerCase();
- if(!email){say('inviteMessage','Enter an email address.');return;}
- const button=$('inviteEditorForm').querySelector('button');
- button.disabled=true;
- say('inviteMessage','Sending invitation…');
+
+
+function registrationToken(){
+ const bytes=crypto.getRandomValues(new Uint8Array(32));
+ let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
+ return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+async function hexHash(token){
+ const buffer=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token));
+ return [...new Uint8Array(buffer)].map(n=>n.toString(16).padStart(2,'0')).join('');
+}
+$('makeSignupLink').addEventListener('click',async()=>{
+ if(!currentAdminId||!idleCheck())return;
+ const button=$('makeSignupLink');button.disabled=true;
+ say('accessMessage','Creating registration link…');
  try{
-  const {data:{session},error:sessionError}=await client.auth.getSession();
-  if(sessionError||!session?.access_token)throw Error('Please sign in again.');
-  const response=await fetch(cfg.url+'/functions/v1/invite-bright-moments-editor',{
-   method:'POST',
-   headers:{
-    'Authorization':'Bearer '+session.access_token,
-    'apikey':cfg.publishableKey,
-    'Content-Type':'application/json'
-   },
-   body:JSON.stringify({email})
-  });
-  const result=await response.json().catch(()=>({}));
-  if(!response.ok)throw Error(result.error||'Could not send invitation.');
-  say('inviteMessage','Invitation sent. The recipient will receive a private password-setup link.');
-  input.value='';
- }catch(error){say('inviteMessage',error.message)}
+  const token=registrationToken();
+  const tokenHash=await hexHash(token);
+  const expiry=new Date(Date.now()+7*86400000).toISOString();
+  const {error}=await client.from('editor_registration_links')
+   .insert({token_hash:tokenHash,created_by:currentAdminId,expires_at:expiry});
+  if(error)throw error;
+  const link=new URL('register.html',location.href);
+  link.hash='token='+token;
+  $('signupLink').value=link.href;
+  $('signupLinkArea').hidden=false;
+  say('accessMessage','Registration link created. It can be used once, within seven days. Access still requires your approval.');
+ }catch(error){say('accessMessage','Could not create the registration link: '+error.message);}
  finally{button.disabled=false;}
 });
+$('copySignupLink').addEventListener('click',async()=>{
+ const value=$('signupLink').value;
+ if(!value)return;
+ try{await navigator.clipboard.writeText(value);say('accessMessage','Registration link copied.');}
+ catch(error){$('signupLink').focus();$('signupLink').select();say('accessMessage','Link selected; copy it from the field.');}
+});
+async function loadAccessRequests(){
+ if(!currentAdminId||!idleCheck())return;
+ const list=$('accountList');
+ const {data,error}=await client.from('editor_access_requests')
+  .select('user_id,email,status,registered_at').order('registered_at',{ascending:false});
+ if(error){say('accessMessage','Unable to load registered accounts: '+error.message);return;}
+ list.replaceChildren();
+ const accounts=data||[];
+ const head=$('registeredCount');
+ if(head)head.textContent=accounts.length+' account'+(accounts.length===1?'':'s');
+ for(const entry of accounts){
+  const item=document.createElement('div');item.className='account-row';
+  const detail=document.createElement('div');
+  const email=document.createElement('div');email.className='account-row-email';email.textContent=entry.email;
+  const status=document.createElement('div');status.className='account-status';status.textContent=entry.status;
+  detail.append(email,status);item.append(detail);
+  const actions=document.createElement('div');actions.className='access-actions';
+  if(entry.user_id!==currentAdminId){
+   if(entry.status!=='approved'){
+    const approve=document.createElement('button');approve.type='button';approve.textContent='Approve';
+    approve.onclick=()=>reviewAccess(entry.user_id,true,approve);
+    actions.append(approve);
+   }
+   if(entry.status!=='denied'){
+    const deny=document.createElement('button');deny.type='button';deny.textContent=entry.status==='approved'?'Revoke access':'Deny';
+    deny.onclick=()=>reviewAccess(entry.user_id,false,deny);
+    actions.append(deny);
+   }
+  }
+  item.append(actions);list.append(item);
+ }
+}
+async function reviewAccess(id,allow,button){
+ if(!currentAdminId||!idleCheck())return;
+ button.disabled=true;
+ say('accessMessage',allow?'Approving access…':'Updating access…');
+ try{
+  const {error}=await client.rpc('review_bright_moments_editor',{target_user:id,approve:allow});
+  if(error)throw error;
+  say('accessMessage',allow?'Editor access approved.':'Editor access denied or revoked.');
+  await loadAccessRequests();
+ }catch(error){say('accessMessage','Could not update account: '+error.message);button.disabled=false;}
+}
+$('refreshAccounts').addEventListener('click',()=>{void loadAccessRequests()});
