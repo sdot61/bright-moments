@@ -422,7 +422,7 @@ async function loadCategories(){
  const nav=document.querySelector('.secondary');
  nav.replaceChildren();
  const all=document.createElement('button');all.type='button';all.dataset.category='all';all.textContent='All';all.style.backgroundColor='#b6d6a0';
- all.addEventListener('mouseenter',()=>changeCategory('all'));
+ 
  all.addEventListener('click',()=>changeCategory('all'));nav.append(all);
  const dropdown=$('category');const previous=dropdown.value;
  dropdown.replaceChildren();
@@ -430,7 +430,7 @@ async function loadCategories(){
   const option=document.createElement('option');option.value=c.slug;option.textContent=c.label;dropdown.add(option);
   const button=document.createElement('button');button.type='button';button.dataset.category=c.slug;button.textContent=c.label;
   button.style.backgroundColor=/^#[0-9a-fA-F]{6}$/.test(c.color)?c.color:'#b6d6a0';
-  button.addEventListener('mouseenter',()=>changeCategory(c.slug));
+  
   button.addEventListener('click',()=>changeCategory(c.slug));
   nav.append(button);
  }
@@ -578,7 +578,7 @@ async function reorderSelected(draggedPhotoId,targetId){
 
 document.querySelectorAll('[data-section]').forEach(button=>{
  const change=()=>changeSection(button.dataset.section);
- button.addEventListener('mouseenter',change);button.addEventListener('click',change);
+ button.addEventListener('click',change);
 });
 
 $('inviteEditorForm').addEventListener('submit',async event=>{
