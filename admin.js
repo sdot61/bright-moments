@@ -446,7 +446,7 @@ async function moveToCategory(slug){
  const fromLabel=fromCategories.length===1
   ? (categories.find(c=>c.slug===fromCategories[0])?.label||fromCategories[0])
   : 'multiple categories';
- const message=(moveIds.length===1?'Photo':' '+moveIds.length+' photos'.trimStart())+' moved from '+fromLabel+' to '+destination.label+'.';
+ const message=(moveIds.length===1?'Photo':moveIds.length+' photos')+' moved from '+fromLabel+' to '+destination.label+'.';
  button.disabled=true;
  let saved=false;
  try{
