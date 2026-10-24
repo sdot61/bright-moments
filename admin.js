@@ -168,13 +168,12 @@ photos=data||[];if(!keepSelection)selected.clear();render();
 function render(){
 const container=$('images');container.replaceChildren();
 for(const p of visiblePhotos()){
-const article=document.createElement('article');article.className='item';article.dataset.photoId=p.id;article.draggable=selected.has(p.id);article.tabIndex=0;if(selected.has(p.id))article.classList.add('selected');
+const article=document.createElement('article');article.className='item';article.dataset.photoId=p.id;article.tabIndex=0;article.setAttribute('role','button');article.setAttribute('aria-label','Select or move '+p.title);article.setAttribute('aria-pressed',String(selected.has(p.id)));if(selected.has(p.id))article.classList.add('selected');
 const photo=document.createElement('div');photo.className='photo';
-const img=document.createElement('img');img.src=url(p.file_path);img.alt=p.title;img.loading='lazy';
-const button=document.createElement('button');button.className='check';button.type='button';button.textContent='✓';button.setAttribute('aria-label','Select '+p.title);button.setAttribute('aria-pressed',String(selected.has(p.id)));
-button.onclick=()=>{if(selected.has(p.id))selected.delete(p.id);else selected.add(p.id);const on=selected.has(p.id);button.textContent='✓';button.setAttribute('aria-pressed',String(on));article.classList.toggle('selected',on);article.draggable=on;};
+const img=document.createElement('img');img.src=url(p.file_path);img.alt=p.title;img.loading='lazy';img.draggable=false;
+const indicator=document.createElement('span');indicator.className='check';indicator.setAttribute('aria-hidden','true');indicator.textContent=selected.has(p.id)?'✓':'';
 attachReorderEvents(article,p.id);
-photo.append(img,button);
+photo.append(img,indicator);
 const title=document.createElement('h3');title.textContent=p.title;
 const meta=document.createElement('p');meta.textContent=p.section+' · '+(categories.find(c=>c.slug===p.category)?.label||p.category);
 article.append(photo,title,meta);container.append(article);
@@ -353,64 +352,83 @@ $('createTab').addEventListener('submit',async e=>{
  finally{button.disabled=false;}
 });
 
-let touchDrag=null;
+
+let activeDrag=null;
 function highlightDrop(id){
  document.querySelectorAll('.item.drag-target').forEach(el=>el.classList.remove('drag-target'));
  if(!id)return;
  const item=Array.from(document.querySelectorAll('.item')).find(el=>el.dataset.photoId===id);
  if(item)item.classList.add('drag-target');
 }
-function dragCleanup(){
- draggedId=null;touchDrag=null;highlightDrop(null);
+function updateCellSelection(article,id,on){
+ if(on)selected.add(id);else selected.delete(id);
+ article.classList.toggle('selected',on);
+ article.setAttribute('aria-pressed',String(on));
+ const check=article.querySelector('.check');
+ if(check)check.textContent=on?'✓':'';
+}
+function toggleCellSelection(article,id){
+ updateCellSelection(article,id,!selected.has(id));
+}
+function cleanupDrag(article){
+ activeDrag=null;
+ article.classList.remove('drag-source');
+ highlightDrop(null);
  document.body.classList.remove('reordering');
 }
 function attachReorderEvents(article,id){
- article.addEventListener('dragstart',event=>{
-  if(!selected.has(id)){event.preventDefault();return;}
-  draggedId=id;
-  event.dataTransfer.effectAllowed='move';
-  event.dataTransfer.setData('text/plain',id);
-  document.body.classList.add('reordering');
- });
- article.addEventListener('dragover',event=>{
-  if(!draggedId)return;
-  event.preventDefault();event.dataTransfer.dropEffect='move';highlightDrop(id);
- });
- article.addEventListener('drop',event=>{
-  if(!draggedId)return;
-  event.preventDefault();const source=draggedId;dragCleanup();
-  if(source!==id)reorderSelected(source,id);
- });
- article.addEventListener('dragend',dragCleanup);
  article.addEventListener('pointerdown',event=>{
-  if(event.pointerType==='mouse'||!selected.has(id)||event.target.closest('button'))return;
-  touchDrag={id,pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,target:null,active:false};
-  article.setPointerCapture(event.pointerId);
+  if(event.button!==0||activeDrag||savingReorder)return;
+  activeDrag={id,pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,moved:false,target:null};
+  // Pointer capture allows dropping on a different cell without losing the held pointer.
+  try{article.setPointerCapture(event.pointerId)}catch{}
  });
  article.addEventListener('pointermove',event=>{
-  if(!touchDrag||touchDrag.pointerId!==event.pointerId||touchDrag.id!==id)return;
-  if(!touchDrag.active&&Math.hypot(event.clientX-touchDrag.startX,event.clientY-touchDrag.startY)<8)return;
-  touchDrag.active=true;event.preventDefault();
-  document.body.classList.add('reordering');
-  const under=document.elementFromPoint(event.clientX,event.clientY)?.closest('.item');
-  touchDrag.target=under?.dataset.photoId||null;
-  highlightDrop(touchDrag.target);
+  const drag=activeDrag;
+  if(!drag||drag.pointerId!==event.pointerId||drag.id!==id)return;
+  if(!drag.moved&&Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)<8)return;
+  if(!drag.moved){
+   drag.moved=true;
+   article.classList.add('drag-source');
+   document.body.classList.add('reordering');
+  }
+  event.preventDefault();
+  const element=document.elementFromPoint(event.clientX,event.clientY);
+  const under=element?.closest('.item');
+  drag.target=under?.dataset.photoId||null;
+  highlightDrop(drag.target!==id?drag.target:null);
  });
  article.addEventListener('pointerup',event=>{
-  if(!touchDrag||touchDrag.pointerId!==event.pointerId||touchDrag.id!==id)return;
-  const target=touchDrag.target,active=touchDrag.active;dragCleanup();
-  if(active&&target&&target!==id)reorderSelected(id,target);
+  const drag=activeDrag;
+  if(!drag||drag.pointerId!==event.pointerId||drag.id!==id)return;
+  const wasDragged=drag.moved,target=drag.target;
+  cleanupDrag(article);
+  if(!wasDragged){
+   toggleCellSelection(article,id);
+  }else{
+   if(!selected.has(id)){
+    selected.clear();
+    // Refresh the visible checkmarks without recreating DOM during a drag.
+    document.querySelectorAll('.item.selected').forEach(el=>{
+     updateCellSelection(el,el.dataset.photoId,false);
+    });
+    updateCellSelection(article,id,true);
+   }
+   if(target&&target!==id)void reorderSelected(id,target);
+  }
  });
- article.addEventListener('pointercancel',dragCleanup);
+ article.addEventListener('pointercancel',()=>{if(activeDrag?.id===id)cleanupDrag(article)});
  article.addEventListener('keydown',event=>{
+  if(event.key===' '||event.key==='Enter'){
+   event.preventDefault();toggleCellSelection(article,id);return;
+  }
   if(!selected.has(id)||!['ArrowLeft','ArrowRight'].includes(event.key))return;
   event.preventDefault();
-  const ordered=visiblePhotos();const n=ordered.findIndex(p=>p.id===id);
-  const next=ordered[n+(event.key==='ArrowLeft'?-1:1)];
-  if(next)reorderSelected(id,next.id);
+  const ordered=visiblePhotos(),n=ordered.findIndex(p=>p.id===id);
+  const neighbor=ordered[n+(event.key==='ArrowLeft'?-1:1)];
+  if(neighbor)void reorderSelected(id,neighbor.id);
  });
 }
-
 async function reorderSelected(draggedPhotoId,targetId){
  const visible=visiblePhotos();
  const from=visible.findIndex(p=>p.id===draggedPhotoId);
