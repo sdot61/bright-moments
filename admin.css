@@ -78,3 +78,5 @@ body.moving-images .secondary [data-category="all"]{opacity:.4;cursor:not-allowe
 .account-list:empty:before{content:"No registered accounts yet.";font-size:14px;color:#736d69}
 .account-row button{font-size:13px;padding:7px 11px}
 @media(max-width:560px){.access-panel{padding:16px}.account-row{flex-direction:column;align-items:flex-start}}
+
+.access-panel{margin-top:65px}.access-panel summary{cursor:pointer;font-size:20px;padding:8px 4px;user-select:none}.access-panel summary:hover{color:#2469df}.access-panel[open] summary{border-bottom:1px solid #ddd;margin-bottom:19px}
