@@ -87,3 +87,6 @@ body.moving-images .secondary [data-category="all"]{opacity:.4;cursor:not-allowe
 .item.selected .photo,.item.drag-target .photo,.item.drag-source .photo{outline:3px solid #2469df!important;outline-offset:-3px!important}
 .item .check{pointer-events:none}
 .secondary [data-category],.primary [data-section]{cursor:pointer}
+
+/* Inline photograph titles remain editable despite disabling drag text-selection. */
+.photo-title-input{user-select:text;-webkit-user-select:text;touch-action:auto}
