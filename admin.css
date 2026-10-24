@@ -21,3 +21,18 @@ body.reordering .item{cursor:move}
 body[data-auth-state="checking"] #login,body[data-auth-state="checking"] #editor{display:none!important}
 body[data-auth-state="ready"] #authChecking{display:none!important}
 .session-check{text-align:center;max-width:600px;min-height:150px;margin:30px auto;font-size:18px;padding:35px 15px}
+
+/* Whole-cell selection and drag; the corner circle is only an indicator. */
+.item{cursor:grab;user-select:none;-webkit-user-select:none;touch-action:pan-y}
+.item .photo img{-webkit-user-drag:none;pointer-events:none}
+.item .check{display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:0;padding:0;z-index:2}
+.item:hover .check,.item.selected .check,.item:focus-visible .check{opacity:1}
+.item.selected .check{background:#b6d6a0}
+.item .check:not(:empty){color:#111}
+.item.drag-source{opacity:.55;cursor:grabbing}
+.item.drag-source .photo{outline-color:#111}
+.item.drag-target .photo{outline:3px dashed #111;outline-offset:-3px}
+.item.selected{touch-action:none}
+body.reordering,body.reordering *{cursor:grabbing!important}
+.item:focus-visible{outline:2px solid #111;outline-offset:4px}
+@media(hover:none){.item .check{opacity:0}.item.selected .check{opacity:1}}
