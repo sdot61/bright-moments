@@ -43,3 +43,38 @@ body.reordering,body.reordering *{cursor:grabbing!important}
 .invite-row button{margin:0;white-space:nowrap}
 #inviteMessage{min-height:20px;font-size:14px}
 @media(max-width:560px){.invite-row{flex-wrap:wrap}.invite-row button{width:100%}}
+
+/* Selected and moving images use a solid blue outline. */
+.item.selected .photo,
+.item.drag-source .photo,
+.item.drag-target .photo,
+.item.selected:hover .photo,
+.item.drag-target:hover .photo{outline:3px solid #2469df!important;outline-offset:-3px!important;box-shadow:none}
+.item .check{border-color:#2469df}
+.item.selected .check{background:#2469df;color:#fff!important}
+.item.drag-target .photo{background:#eff5ff}
+#moveImage[aria-pressed="true"]{background:#2469df;color:#fff;border-color:#2469df}
+body.moving-images .secondary [data-category]{font-weight:900!important;filter:saturate(1.45) brightness(1.04);border:2px solid transparent;box-shadow:0 0 0 1px rgba(0,0,0,.2);position:relative;z-index:1;transition:transform .15s,filter .15s,border-color .15s}
+body.moving-images .secondary [data-category]:not([data-category="all"]):hover,
+body.moving-images .secondary [data-category]:not([data-category="all"]):focus-visible{transform:scale(1.10);filter:saturate(1.7) brightness(1.06);z-index:2;border-color:#2469df}
+body.moving-images .secondary [data-category="all"]{opacity:.4;cursor:not-allowed}
+#moveConfirmation{position:fixed;left:0;right:0;bottom:0;z-index:100;background:#2469df;color:white;text-align:center;font-size:19px;padding:16px 25px;box-shadow:0 -3px 13px rgba(0,0,0,.12)}
+#moveConfirmation[hidden]{display:none}
+.editable-photo-title{cursor:text}
+.editable-photo-title:hover,.editable-photo-title:focus-visible{color:#2469df;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:4px}
+.photo-title-input{display:block;width:100%;font-family:inherit;font-size:19px;font-weight:700;margin-top:12px;padding:6px 8px;outline:2px solid #2469df;border:1px solid #2469df;background:white}
+.access-panel{max-width:780px;margin:32px auto;padding:22px 24px;border:1px solid #ddd}
+.access-panel h2{font-size:24px;margin:0 0 16px}
+.access-panel label{display:block;margin:14px 0 8px}
+.access-invite-row,.access-link-row,.access-review-header,.access-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.access-link-row input{flex:1;min-width:200px}
+.access-muted{font-size:13px;color:#736d69}
+#accessMessage{font-size:14px;min-height:18px}
+.access-review-header{justify-content:space-between;border-top:1px solid #e2e2e2;margin-top:24px;padding-top:8px}
+.access-review-header h3{font-size:18px;font-weight:400}
+.account-row{display:flex;justify-content:space-between;align-items:center;gap:15px;border-bottom:1px solid #eee;padding:12px 0}
+.account-row-email{font-size:15px;overflow-wrap:anywhere}
+.account-status{display:inline-block;font-size:12px;color:#736d69;margin-top:4px}
+.account-list:empty:before{content:"No registered accounts yet.";font-size:14px;color:#736d69}
+.account-row button{font-size:13px;padding:7px 11px}
+@media(max-width:560px){.access-panel{padding:16px}.account-row{flex-direction:column;align-items:flex-start}}
