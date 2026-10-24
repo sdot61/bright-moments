@@ -14,3 +14,5 @@
 .item.drag-target .photo{outline:3px dashed #111;outline-offset:-3px;background:#f9f8f5}
 body.reordering .item{cursor:move}
 @media(max-width:560px){.create-tab-row{flex-wrap:wrap}.create-tab-row button{width:100%}}
+
+@media(hover:none){.check{opacity:1}}
