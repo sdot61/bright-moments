@@ -102,7 +102,7 @@ body,button,input,select,textarea,option{font-family:var(--comic);color:var(--na
 a,a:visited,header .brand-link,header .brand-link h1,header .brand-link p{color:var(--navy)}
 input::placeholder,textarea::placeholder{color:var(--navy);opacity:.7}
 .item>p,.reorder-tip,.access-muted,.account-status,.account-list:empty:before,.access-panel summary:hover,.editable-photo-title:hover,.editable-photo-title:focus-visible{color:var(--navy)}
-.hero .primary button,.secondary button,.hero .primary [data-section],.secondary [data-category]{font-family:var(--comic);color:var(--navy)}
+.hero .primary button,.secondary button,.hero .primary [data-section],.secondary [data-category]{font-family:var(--comic);color:#001f3f}
 /* Keep move feedback legible while using navy lettering. */
 #moveImage[aria-pressed="true"]{background:#dbe9ff;color:var(--navy);border-color:#2469df}
 #moveConfirmation{background:#dbe9ff;color:var(--navy)}
