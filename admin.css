@@ -96,8 +96,8 @@ header .brand-link{display:inline-block;text-decoration:none;color:inherit;curso
 header .brand-link:focus-visible{outline:2px solid #3d3c3a;outline-offset:6px}
 header .brand-link h1,header .brand-link p{color:inherit}
 
-/* Site-wide Comic Sans and navy branding. Preserve white text on tabs. */
-:root{--navy:#001f3f;--comic:'Comic Sans MS','Comic Sans',cursive}
+/* Site-wide Comic Sans with lighter navy-indigo for the main lettering. */
+:root{--navy:#3d4f90;--comic:'Comic Sans MS','Comic Sans',cursive}
 body,button,input,select,textarea,option{font-family:var(--comic);color:var(--navy)}
 a,a:visited,header .brand-link,header .brand-link h1,header .brand-link p{color:var(--navy)}
 input::placeholder,textarea::placeholder{color:var(--navy);opacity:.7}
