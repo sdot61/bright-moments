@@ -96,13 +96,15 @@ header .brand-link{display:inline-block;text-decoration:none;color:inherit;curso
 header .brand-link:focus-visible{outline:2px solid #3d3c3a;outline-offset:6px}
 header .brand-link h1,header .brand-link p{color:inherit}
 
-/* Site-wide Comic Sans with the requested navy-blue #3D4F90 lettering. */
+/* Navy for headings and ordinary text; white for every tab and button. */
 :root{--navy:#3D4F90;--comic:'Comic Sans MS','Comic Sans',cursive}
-body,button,input,select,textarea,option{font-family:var(--comic);color:var(--navy)}
+body,input,select,textarea,option{font-family:var(--comic);color:var(--navy)}
 a,a:visited,header .brand-link,header .brand-link h1,header .brand-link p{color:var(--navy)}
 input::placeholder,textarea::placeholder{color:var(--navy);opacity:.7}
 .item>p,.reorder-tip,.access-muted,.account-status,.account-list:empty:before,.access-panel summary:hover,.editable-photo-title:hover,.editable-photo-title:focus-visible{color:var(--navy)}
-.hero .primary button,.secondary button,.hero .primary [data-section],.secondary [data-category]{font-family:var(--comic);color:#3D4F90}
-/* Keep move feedback legible while using navy lettering. */
-#moveImage[aria-pressed="true"]{background:#dbe9ff;color:var(--navy);border-color:#2469df}
+button,.hero .primary button,.secondary button,.hero .primary [data-section],.secondary [data-category]{font-family:var(--comic);color:#fff}
+/* Action buttons were white-on-white after the font change: give them a solid navy background. */
+#actions button{background:var(--navy);border-color:var(--navy);color:#fff}
+#moveImage[aria-pressed="true"]{background:#2469df;color:#fff;border-color:#2469df}
+/* Move confirmations are messages, not buttons, so their text stays navy. */
 #moveConfirmation{background:#dbe9ff;color:var(--navy)}
