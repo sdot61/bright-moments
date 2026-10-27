@@ -71,6 +71,14 @@ async function loadManagedPhotos(){
  }))};
 }
 const items=document.getElementById("items");let section="gallery",category="all";
+const requestedSection=new URLSearchParams(window.location.search).get('section');
+if(requestedSection==='store'||requestedSection==='gallery'){
+ section=requestedSection;
+ document.querySelector('.subnav').classList.add('expanded');
+ document.querySelectorAll('[data-section]').forEach(button=>{
+  button.setAttribute('aria-selected',String(button.dataset.section===section));
+ });
+}
 function render(){const shown=products.filter(p=>p.section===section&&(category==="all"||p.category===category));items.replaceChildren();if(!shown.length){const empty=document.createElement("p");empty.className="empty";empty.textContent=section==="store"?"Store items are coming soon.":"No pieces in this selection yet.";items.append(empty);return}for(const p of shown){const article=document.createElement("article");article.className="item";const photo=document.createElement("div");photo.className="photo";const img=document.createElement("img");img.src=p.file;img.alt=p.title;img.loading="lazy";photo.append(img);const name=document.createElement("h2");name.className="item-title";name.textContent=p.title;article.append(photo,name);if(section==="store"){const buy=document.createElement("button");buy.className="buy";buy.textContent="Price TBC · Buy";buy.addEventListener("click",()=>alert("Checkout is not available yet."));article.append(buy)}items.append(article)}}document.querySelectorAll("[data-section]").forEach(button=>{const change=()=>{section=button.dataset.section;category="all";document.querySelector(".subnav").classList.add("expanded");document.querySelectorAll("[data-section]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.section===section)));document.querySelectorAll("[data-category]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.category===category)));render()};button.addEventListener("mouseenter",change);button.addEventListener("click",change)});document.querySelectorAll("[data-category]").forEach(button=>{const change=()=>{category=button.dataset.category;document.querySelectorAll("[data-category]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.category===category)));render()};button.addEventListener("mouseenter",change);button.addEventListener("click",change)});
 const liveGalleryChannel=typeof BroadcastChannel==='function'?new BroadcastChannel('bright-moments-gallery'):null;
 let galleryReloadTask=null;
