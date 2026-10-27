@@ -17,6 +17,8 @@ async function loadCategoryTabs(){
   const {data,error}=await client.from('gallery_categories').select('slug,label,color').order('sort_order').order('label');
   if(error)throw error;
   categoryNames=(data||[]).map(p=>p.slug);
+  // A deleted category can no longer remain selected on the public website.
+  if(category!=='all'&&!categoryNames.includes(category))category='all';
   const nav=document.querySelector('.tabs.secondary');
   nav.replaceChildren();
   const entries=[{slug:'all',label:'All',color:'#b6d6a0'},...(data||[])];
