@@ -1,5 +1,5 @@
 // Shared brand-header navigation for public, editor, and registration pages.
-// An authenticated, approved editor goes back to the editor; everyone else goes home.
+// The heading always returns home; approved signed-in editors get a separate shortcut.
 (()=>{
  const brand=document.getElementById('brandNavigation');
  if(!brand)return;
@@ -55,23 +55,40 @@
   return !approvalError&&!!approval;
  }
 
- let navigating=false;
- brand.addEventListener('click',async event=>{
-  if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
-  event.preventDefault();
-  if(navigating)return;
-  navigating=true;
-  let destination=homepage;
-  try{
-   if(await canReturnToEditor())destination=editorPage;
-  }catch(error){
-   console.warn('Brand navigation could not verify editor access',error);
+ // The heading always leads to the public homepage, even for signed-in editors.
+ // The separate Editing mode link is visible only after verifying editor access.
+ if(window.location.pathname===new URL(homepage).pathname){
+  const container=document.createElement('div');
+  container.className='brand-heading-wrap';
+  brand.parentNode.insertBefore(container,brand);
+  container.append(brand);
+  const editorLink=document.createElement('a');
+  editorLink.className='brand-edit-link';
+  editorLink.href=editorPage;
+  editorLink.textContent='Editing mode';
+  editorLink.setAttribute('aria-label','Return to editing mode');
+  editorLink.hidden=true;
+  container.append(editorLink);
+
+  let checkGeneration=0;
+  async function updateEditorShortcut(){
+   const thisCheck=++checkGeneration;
+   editorLink.hidden=true;
+   try{
+    const approved=await canReturnToEditor();
+    if(thisCheck===checkGeneration)editorLink.hidden=!approved;
+   }catch(error){
+    if(thisCheck===checkGeneration)editorLink.hidden=true;
+    console.warn('Unable to verify editor shortcut',error);
+   }
   }
-  if(new URL(destination).pathname===window.location.pathname){
-   window.scrollTo({top:0,behavior:'auto'});
-   navigating=false;
-   return;
-  }
-  window.location.assign(destination);
- });
+  void updateEditorShortcut();
+  window.addEventListener('focus',()=>{void updateEditorShortcut();});
+  document.addEventListener('visibilitychange',()=>{
+   if(!document.hidden)void updateEditorShortcut();
+  });
+  window.addEventListener('storage',event=>{
+   if(event.key===SESSION_KEY||event.key===ACTIVITY_KEY)void updateEditorShortcut();
+  });
+ }
 })();
