@@ -101,3 +101,14 @@ button,.hero .primary button,.secondary button,.hero .primary [data-section],.se
 
 #upload button[type="submit"]{transition:background-color .16s ease,box-shadow .16s ease}
 #upload.has-files button[type="submit"]{background:#248745;color:#fff;font-weight:900;box-shadow:inset 0 0 0 2px #166432}
+
+#moveImage[aria-pressed="true"]{background:#2469df;color:#fff;border-color:#2469df}
+body.moving-images .secondary [data-category]{font-weight:900!important;filter:saturate(1.45) brightness(1.04);border:2px solid transparent;box-shadow:0 0 0 1px rgba(0,0,0,.2);position:relative;z-index:1;transition:transform .15s,filter .15s,border-color .15s}
+body.moving-images .secondary [data-category]:not([data-category="all"]):hover,
+body.moving-images .secondary [data-category]:not([data-category="all"]):focus-visible{transform:scale(1.10);filter:saturate(1.7) brightness(1.06);z-index:2;border-color:#2469df}
+body.moving-images .secondary [data-category="all"]{opacity:.4;cursor:not-allowed}
+#moveConfirmation{position:fixed;left:0;right:0;bottom:0;z-index:100;background:#2469df;color:white;text-align:center;font-size:19px;padding:16px 25px;box-shadow:0 -3px 13px rgba(0,0,0,.12)}
+#moveConfirmation[hidden]{display:none}
+#moveImage[aria-pressed="true"]{background:#2469df;color:#fff;border-color:#2469df}
+/* Move confirmations are messages, not buttons, so their text stays navy. */
+#moveConfirmation{background:#dbe9ff;color:var(--navy)}
