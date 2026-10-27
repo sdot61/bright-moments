@@ -306,15 +306,22 @@ return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error(
 }
 $('upload').addEventListener('submit',async e=>{
 e.preventDefault();if(!client)return;
-const files=Array.from($('files').files);say('status','Uploading '+files.length+' photograph(s)…');
-for(const file of files){try{
+const files=Array.from($('files').files);
+if(!files.length){say('status','Choose at least one photograph to upload.');return;}
+say('status','Uploading '+files.length+' photograph(s)…');
+// Assign the batch positions ahead of every existing photo in selection order.
+const {data:topPhoto,error:orderError}=await client.from('gallery_images')
+ .select('sort_order').order('sort_order',{ascending:true}).limit(1).maybeSingle();
+if(orderError){say('status','Could not determine photo order: '+orderError.message);return;}
+const firstOrder=Math.min(0,topPhoto?.sort_order??0)-files.length;
+for(const [index,file] of files.entries()){try{
 const blob=await optimize(file);
 const path=crypto.randomUUID()+'.jpg';
 const {error:uploadError}=await client.storage.from(bucket).upload(path,blob,{contentType:'image/jpeg',upsert:false});
 if(uploadError)throw uploadError;
-const {error:dbError}=await client.from('gallery_images').insert({file_path:path,title:file.name.replace(/\.[^.]+$/,'').replace(/[_-]/g,' '),section:$('section').value,category:$('category').value,sort_order:photos.length});
+const {error:dbError}=await client.from('gallery_images').insert({file_path:path,title:file.name.replace(/\.[^.]+$/,'').replace(/[_-]/g,' '),section:$('section').value,category:$('category').value,sort_order:firstOrder+index});
 if(dbError){await client.storage.from(bucket).remove([path]);throw dbError;}signalGalleryChange();
-}catch(error){say('status','Upload error: '+error.message);return;}}
+}catch(error){say('status','Upload error: '+error.message);await loadPhotos();return;}}
 say('status','Photographs uploaded.');$('files').value='';await loadPhotos();
 });
 
