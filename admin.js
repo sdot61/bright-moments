@@ -683,8 +683,15 @@ async function reorderSelected(draggedPhotoId,targetId){
 }
 
 document.querySelectorAll('[data-section]').forEach(button=>{
- const change=()=>changeSection(button.dataset.section);
- button.addEventListener('click',change);
+ button.addEventListener('click',()=>{
+  if($('editor').hidden){
+   const destination=new URL('./',window.location.href);
+   destination.searchParams.set('section',button.dataset.section);
+   window.location.assign(destination.href);
+   return;
+  }
+  changeSection(button.dataset.section);
+ });
 });
 
 
