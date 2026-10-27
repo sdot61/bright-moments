@@ -488,10 +488,17 @@ async function moveToCategory(slug){
   }
   selected.clear();
   endMoveMode();
-  render(); // Remain in original category; moved photos vanish immediately.
+  // All is an aggregate view: show the actual source tab so the moved photos
+  // visibly disappear instead of still appearing in All under the new category.
+  if(viewCategory==='all'&&fromCategories.length)viewCategory=fromCategories[0];
+  document.querySelectorAll('.secondary [data-category]').forEach(tab=>
+   tab.setAttribute('aria-selected',String(tab.dataset.category===viewCategory)));
+  updateSelectedTabActions();
+  render();
   signalGalleryChange();
+  await loadPhotos();
   showMoveRibbon(message);
-  say('status',message+(viewCategory==='all'?' The All tab still includes all categories.':''));
+  say('status',message+(fromCategories.length&&viewCategory===fromCategories[0]?' Showing the original tab.':''));
  }catch(error){
   say('status',(saved?'The move may have saved, but verification failed: ':'Could not move photos: ')+error.message);
   await loadPhotos(true);
@@ -503,10 +510,161 @@ function selectCategoryTab(slug){
  if(movingImages){void moveToCategory(slug);return;}
  changeCategory(slug);
 }
+// Category tabs can be dragged, without changing the click-to-filter and photo-move actions.
+let categoryTabDrag=null,categoryReorderSaving=false,suppressCategoryClickUntil=0;
+function clearCategoryDragHighlights(){
+ document.querySelectorAll('.secondary .tab-dragging,.secondary .tab-drop-target')
+  .forEach(el=>el.classList.remove('tab-dragging','tab-drop-target'));
+}
+function categoryDropTarget(x,y){
+ const element=document.elementFromPoint(x,y);
+ const button=element?.closest('.secondary button[data-category]');
+ return button&&button.dataset.category!=='all'?button:null;
+}
+function trackCategoryTabDrag(event){
+ const drag=categoryTabDrag;
+ if(!drag||event.pointerId!==drag.pointerId)return;
+ if(!drag.moved&&Math.hypot(event.clientX-drag.x,event.clientY-drag.y)<8)return;
+ if(!drag.moved){
+  drag.moved=true;
+  drag.button.classList.add('tab-dragging');
+  document.body.classList.add('reordering-tabs');
+ }
+ if(event.cancelable)event.preventDefault();
+ const target=categoryDropTarget(event.clientX,event.clientY);
+ clearCategoryDragHighlights();
+ drag.button.classList.add('tab-dragging');
+ drag.target=target&&target!==drag.button?target:null;
+ if(drag.target)drag.target.classList.add('tab-drop-target');
+}
+function finishCategoryTabDrag(event,cancel=false){
+ const drag=categoryTabDrag;
+ if(!drag||event.pointerId!==drag.pointerId)return;
+ categoryTabDrag=null;
+ document.removeEventListener('pointermove',trackCategoryTabDrag);
+ document.removeEventListener('pointerup',finishCategoryTabDrag);
+ document.removeEventListener('pointercancel',cancelCategoryTabDrag);
+ clearCategoryDragHighlights();
+ document.body.classList.remove('reordering-tabs');
+ if(!drag.moved)return;
+ // Some browsers emit a click after a completed pointer gesture.
+ suppressCategoryClickUntil=Date.now()+400;
+ if(cancel||movingImages)return;
+ const target=categoryDropTarget(event.clientX,event.clientY)||drag.target;
+ if(target&&target.dataset.category!==drag.slug){
+  void saveCategoryTabOrder(drag.slug,target.dataset.category);
+ }
+}
+function cancelCategoryTabDrag(event){finishCategoryTabDrag(event,true);}
+function setupCategoryTabDragging(button){
+ button.addEventListener('pointerdown',event=>{
+  if(event.button!==0||event.isPrimary===false||categoryTabDrag||categoryReorderSaving||movingImages)return;
+  categoryTabDrag={slug:button.dataset.category,button,pointerId:event.pointerId,x:event.clientX,y:event.clientY,moved:false,target:null};
+  document.addEventListener('pointermove',trackCategoryTabDrag,{passive:false});
+  document.addEventListener('pointerup',finishCategoryTabDrag);
+  document.addEventListener('pointercancel',cancelCategoryTabDrag);
+ });
+ // Keyboard alternative for the same operation.
+ button.addEventListener('keydown',event=>{
+  if(!event.altKey||!['ArrowLeft','ArrowRight'].includes(event.key)||movingImages||categoryReorderSaving)return;
+  event.preventDefault();
+  const index=categories.findIndex(c=>c.slug===button.dataset.category);
+  const neighbor=categories[index+(event.key==='ArrowLeft'?-1:1)];
+  if(neighbor)void saveCategoryTabOrder(button.dataset.category,neighbor.slug);
+ });
+}
+async function saveCategoryTabOrder(fromSlug,toSlug){
+ if(categoryReorderSaving||movingImages||!currentAdminId||!idleCheck())return;
+ const order=categories.map(c=>c.slug),source=order.indexOf(fromSlug),destination=order.indexOf(toSlug);
+ if(source<0||destination<0||source===destination)return;
+ order.splice(destination,0,...order.splice(source,1));
+ categoryReorderSaving=true;
+ say('tabMessage','Saving tab order…');
+ try{
+  const {error}=await client.rpc('reorder_bright_moments_categories',{category_slugs:order});
+  if(error)throw error;
+  await loadCategories();
+  signalGalleryChange();
+  say('tabMessage','Tab order saved. The public website will use the same order.');
+ }catch(error){
+  await loadCategories();
+  say('tabMessage','Could not rearrange tabs: '+error.message);
+ }finally{categoryReorderSaving=false;updateSelectedTabActions();}
+}
+function updateSelectedTabActions(){
+ const active=categories.find(c=>c.slug===viewCategory);
+ $('deleteTab').hidden=!active;
+ $('deleteTab').disabled=categoryReorderSaving;
+ $('deleteTab').setAttribute('aria-label',active?'Delete tab '+active.label:'Delete selected tab');
+}
+let pendingDeleteTab=null,categoryDeleteSaving=false;
+$('deleteTab').addEventListener('click',async()=>{
+ const current=categories.find(c=>c.slug===viewCategory);
+ if(!current||categoryDeleteSaving||!currentAdminId||!idleCheck())return;
+ if(movingImages)endMoveMode();
+ say('tabMessage','Checking tab contents…');
+ const {count,error}=await client.from('gallery_images')
+  .select('id',{head:true,count:'exact'}).eq('category',current.slug);
+ if(error){say('tabMessage','Could not check tab contents: '+error.message);return;}
+ const choices=categories.filter(c=>c.slug!==current.slug);
+ if(count>0&&!choices.length){
+  say('tabMessage','Add another tab before deleting this one, so its photos have somewhere to go.');
+  return;
+ }
+ pendingDeleteTab={slug:current.slug,label:current.label};
+ $('deleteTabTitle').textContent='Delete '+current.label+' tab?';
+ $('deleteTabExplanation').textContent=count>0
+  ?'This tab contains '+count+' photo'+(count===1?'':'s')+'. Select a destination; its photos will be moved, not deleted.'
+  :'This tab is empty. Deleting it will not delete any photographs.';
+ const transfer=$('deleteTabTransfer');
+ transfer.hidden=count===0;
+ const dropdown=$('deleteTabDestination');
+ dropdown.replaceChildren();
+ for(const choice of choices){
+  const option=document.createElement('option');
+  option.value=choice.slug;
+  option.textContent=choice.label;
+  dropdown.add(option);
+ }
+ $('deleteTabError').textContent='';
+ say('tabMessage','');
+ $('deleteTabDialog').showModal();
+});
+$('cancelDeleteTab').addEventListener('click',()=>$('deleteTabDialog').close());
+$('deleteTabDialog').addEventListener('close',()=>{if(!categoryDeleteSaving)pendingDeleteTab=null;});
+$('deleteTabForm').addEventListener('submit',async event=>{
+ event.preventDefault();
+ if(categoryDeleteSaving||!pendingDeleteTab||!currentAdminId||!idleCheck())return;
+ categoryDeleteSaving=true;
+ const confirmButton=$('confirmDeleteTab');
+ confirmButton.disabled=true;
+ $('deleteTabError').textContent='Deleting tab…';
+ const {slug,label}=pendingDeleteTab;
+ const destination=$('deleteTabTransfer').hidden?null:$('deleteTabDestination').value;
+ const destinationName=categories.find(c=>c.slug===destination)?.label;
+ try{
+  const {data,error}=await client.rpc('delete_bright_moments_category',{
+   category_slug:slug,move_photos_to:destination
+  });
+  if(error)throw error;
+  pendingDeleteTab=null;
+  $('deleteTabDialog').close();
+  viewCategory='all';
+  selected.clear();
+  await loadCategories();
+  await loadPhotos();
+  signalGalleryChange();
+  const moved=Number(data)||0;
+  say('tabMessage','Deleted '+label+'.'+(moved?' Moved '+moved+' photos to '+destinationName+'.':''));
+ }catch(error){$('deleteTabError').textContent='Could not delete tab: '+error.message;}
+ finally{categoryDeleteSaving=false;confirmButton.disabled=false;updateSelectedTabActions();}
+});
+
 const palette=['#f2a277','#c9b4dc','#e9a4a9','#f2d36b','#b6d6a0'];
 function changeCategory(next){
  viewCategory=next;
  selected.clear();
+ updateSelectedTabActions();
  document.querySelectorAll('[data-category]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.category===next)));
  render();
 }
@@ -532,12 +690,14 @@ async function loadCategories(){
   const button=document.createElement('button');button.type='button';button.dataset.category=c.slug;button.textContent=c.label;
   button.style.backgroundColor=/^#[0-9a-fA-F]{6}$/.test(c.color)?c.color:'#b6d6a0';
   
-  button.addEventListener('click',()=>selectCategoryTab(c.slug));
+  button.addEventListener('click',()=>{if(Date.now()>=suppressCategoryClickUntil)selectCategoryTab(c.slug);});
+  setupCategoryTabDragging(button);
   nav.append(button);
  }
  if(categories.some(c=>c.slug===previous))dropdown.value=previous;
  if(viewCategory!=='all'&&!categories.some(c=>c.slug===viewCategory))viewCategory='all';
  nav.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.category===viewCategory)));
+ updateSelectedTabActions();
 }
 $('createTab').addEventListener('submit',async e=>{
  e.preventDefault();
