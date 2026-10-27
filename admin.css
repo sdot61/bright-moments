@@ -112,3 +112,22 @@ body.moving-images .secondary [data-category="all"]{opacity:.4;cursor:not-allowe
 #moveImage[aria-pressed="true"]{background:#2469df;color:#fff;border-color:#2469df}
 /* Move confirmations are messages, not buttons, so their text stays navy. */
 #moveConfirmation{background:#dbe9ff;color:var(--navy)}
+
+/* Editor-only category tab reordering. All stays fixed at the front. */
+#editor .secondary button[data-category]:not([data-category="all"]){touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+#editor .secondary .tab-dragging{cursor:grabbing!important;opacity:.55;outline:3px dashed var(--navy);outline-offset:-3px}
+#editor .secondary .tab-drop-target{outline:3px solid #2451a4!important;outline-offset:-3px;filter:brightness(.85)}
+body.reordering-tabs{user-select:none;-webkit-user-select:none}
+#actions #deleteTab{background:#802c43;color:#fff;border-color:#802c43;font-weight:800}
+#actions #deleteTab:hover,#confirmDeleteTab:hover{background:#682035}
+#actions #deleteTab[hidden],#deleteTabTransfer[hidden]{display:none!important}
+#deleteTabDialog{width:min(510px,calc(100vw - 32px));max-width:100%;border:1px solid #ad9da4;border-radius:8px;padding:26px;background:white;color:var(--navy);box-shadow:0 10px 45px rgba(0,0,0,.18)}
+#deleteTabDialog::backdrop{background:rgba(20,20,30,.42)}
+#deleteTabDialog h3{margin:0 0 12px;font-size:21px}
+#deleteTabDialog p{line-height:1.5}
+#deleteTabTransfer label{display:block;margin:12px 0 6px}
+#deleteTabDestination{width:100%}
+#deleteTabError{min-height:1.3em}
+.delete-tab-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+#confirmDeleteTab{background:#802c43;color:#fff;font-weight:800}
+#cancelDeleteTab{background:#e5e8ee;color:var(--navy)}
