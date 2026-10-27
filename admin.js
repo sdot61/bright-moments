@@ -304,6 +304,12 @@ const canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.wid
 canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();
 return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('Image conversion failed')),'image/jpeg',.83));
 }
+const uploadForm=$('upload');
+function updateUploadButtonState(){
+ uploadForm.classList.toggle('has-files', $('files').files.length>0);
+}
+$('files').addEventListener('change',updateUploadButtonState);
+updateUploadButtonState();
 $('upload').addEventListener('submit',async e=>{
 e.preventDefault();if(!client)return;
 const files=Array.from($('files').files);
@@ -322,7 +328,7 @@ if(uploadError)throw uploadError;
 const {error:dbError}=await client.from('gallery_images').insert({file_path:path,title:file.name.replace(/\.[^.]+$/,'').replace(/[_-]/g,' '),section:$('section').value,category:$('category').value,sort_order:firstOrder+index});
 if(dbError){await client.storage.from(bucket).remove([path]);throw dbError;}signalGalleryChange();
 }catch(error){say('status','Upload error: '+error.message);await loadPhotos();return;}}
-say('status','Photographs uploaded.');$('files').value='';await loadPhotos();
+say('status','Photographs uploaded.');$('files').value='';updateUploadButtonState();await loadPhotos();
 });
 
 const GALLERY_CHANGE_KEY='bright-moments-gallery-updated-v1';
