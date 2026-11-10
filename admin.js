@@ -882,6 +882,18 @@ function toggleCellSelection(id){
   'No photos selected.');
  if(movingImages)updateMoveNavigation();
 }
+// Clicking empty editor/background space clears all selected photographs.
+document.addEventListener('click',event=>{
+ if($('editor').hidden||!selected.size||savingReorder)return;
+ const target=event.target;
+ if(!(target instanceof Element))return;
+ // Keep photo selection, buttons, form controls, links, and dialogs interactive.
+ if(target.closest('#images .item,button,a,input,textarea,select,option,label,summary,dialog,[role="button"],[contenteditable="true"],.hero'))return;
+ selected.clear();
+ if(movingImages)endMoveMode();
+ updatePhotoSelectionControls();
+ say('status','No photos selected.');
+});
 function attachPhotoSelection(article,id){
  article.addEventListener('click',event=>{
   if(event.target.closest('.editable-photo-title,.photo-title-input,input,button'))return;
