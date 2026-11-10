@@ -35,6 +35,7 @@ function saveLastActivity(userId,when=Date.now()){
 function clearEditorAccess(){
  currentAdminId=null;
  selected.clear();
+ if(movingImages)endMoveMode();
  show('editor',false);
  show('login',true);
 }
@@ -429,11 +430,47 @@ function visiblePhotos(){
 
 
 let movingImages=false;
+let moveDestinationSection='gallery';
 let moveNoticeTimer=null;
+// Normal category colors are stored in Supabase; move mode has a distinct
+// palette for each parent space, whether or not the photo starts there.
+const moveSectionPalettes={
+ gallery:['#b04e7c','#ba6875','#a85689','#bb675e','#9f588e','#bb755b','#a94d70'],
+ store:['#35679a','#247e88','#4861a0','#327b72','#456f99','#37768e','#3f6595']
+};
+function sectionLabel(section){return section==='store'?'Store':'Gallery';}
+function updateMoveNavigation(){
+ const selectedSection=movingImages?moveDestinationSection:viewSection;
+ document.querySelectorAll('#miniSectionNav [data-move-section]').forEach(button=>{
+  const active=button.dataset.moveSection===selectedSection;
+  button.setAttribute('aria-pressed',String(active));
+  button.setAttribute('aria-label',movingImages?
+   'Move selected photo to '+sectionLabel(button.dataset.moveSection):
+   'View '+sectionLabel(button.dataset.moveSection)+' photographs');
+ });
+ const nav=document.querySelector('#editor nav.secondary');
+ nav.dataset.movePalette=movingImages?moveDestinationSection:'normal';
+ nav.setAttribute('aria-label',movingImages?
+  'Choose destination category in '+sectionLabel(moveDestinationSection):
+  'Photo categories');
+ nav.querySelectorAll('button[data-category]').forEach((button,index)=>{
+  const entry=categories.find(c=>c.slug===button.dataset.category);
+  if(!entry)return;
+  const originalColor=/^#[0-9a-fA-F]{6}$/.test(entry.color)?entry.color:'#b6d6a0';
+  const palette=moveSectionPalettes[moveDestinationSection];
+  button.style.backgroundColor=movingImages?palette[index%palette.length]:originalColor;
+  button.setAttribute('aria-selected',String(!movingImages&&button.dataset.category===viewCategory));
+ });
+ const hint=$('moveSectionInstruction');
+ hint.hidden=!movingImages;
+ if(movingImages)hint.textContent='Moving to '+sectionLabel(moveDestinationSection)+': choose a colored category below, or switch Store / Gallery above.';
+}
 function endMoveMode(){
  movingImages=false;
+ moveDestinationSection=viewSection;
  document.body.classList.remove('moving-images');
  $('moveImage').setAttribute('aria-pressed','false');
+ updateMoveNavigation();
 }
 function showMoveRibbon(message){
  let banner=$('moveConfirmation');
@@ -450,71 +487,98 @@ function showMoveRibbon(message){
  banner.hidden=false;
  moveNoticeTimer=setTimeout(()=>{banner.hidden=true;moveNoticeTimer=null;},3000);
 }
+document.querySelectorAll('#miniSectionNav [data-move-section]').forEach(button=>{
+ button.addEventListener('click',()=>{
+  const section=button.dataset.moveSection;
+  if(movingImages){
+   moveDestinationSection=section;
+   updateMoveNavigation();
+   say('status','Moving selected photo to '+sectionLabel(section)+'. Choose a category below.');
+  }else{
+   changeSection(section);
+  }
+ });
+});
 $('moveImage').addEventListener('click',()=>{
  if($('moveImage').disabled)return;
- if(movingImages){endMoveMode();return;}
+ if(movingImages){
+  endMoveMode();
+  say('status','Move canceled.');
+  return;
+ }
  if(!selected.size){say('status','Select a photo to move.');return;}
  movingImages=true;
+ moveDestinationSection=viewSection;
  document.body.classList.add('moving-images');
  $('moveImage').setAttribute('aria-pressed','true');
- say('status','Choose the destination tab for the selected photo.');
+ updateMoveNavigation();
+ say('status','Choose Store or Gallery, then choose the destination category below.');
 });
 async function moveToCategory(slug){
  if(!movingImages)return;
  const destination=categories.find(c=>c.slug===slug);
  if(!destination)return;
  const button=$('moveImage');
- if(button.disabled)return; // Prevent simultaneous moves to different tabs.
- const original=new Map(photos.map(p=>[p.id,p.category]));
- const moveIds=[...selected].filter(id=>original.has(id)&&original.get(id)!==slug);
+ if(button.disabled)return;
+ const moveSection=moveDestinationSection;
+ const original=new Map(photos.map(p=>[p.id,{category:p.category,section:p.section}]));
+ const moveIds=[...selected].filter(id=>{
+  const entry=original.get(id);
+  return entry&&(entry.category!==slug||entry.section!==moveSection);
+ });
  if(!moveIds.length){
-  say('status','The selected photo is already in '+destination.label+'. Choose a different tab.');
+  say('status','The selected photo is already in '+sectionLabel(moveSection)+' / '+destination.label+'. Choose another destination.');
   return;
  }
- const fromCategories=[...new Set(moveIds.map(id=>original.get(id)))];
- const fromLabel=fromCategories.length===1
-  ? (categories.find(c=>c.slug===fromCategories[0])?.label||fromCategories[0])
-  : 'multiple categories';
- const message=(moveIds.length===1?'Photo':moveIds.length+' photos')+' moved from '+fromLabel+' to '+destination.label+'.';
+ const source=original.get(moveIds[0]);
+ const originalCategory=categories.find(c=>c.slug===source.category)?.label||source.category;
+ const message='Photo moved from '+sectionLabel(source.section)+' / '+originalCategory+
+  ' to '+sectionLabel(moveSection)+' / '+destination.label+'.';
  button.disabled=true;
  let saved=false;
  try{
-  // First check what the database reports was actually updated.
+  const fields={category:slug,section:moveSection};
+  // A photo transferred to another parent space appears at the front there.
+  if(source.section!==moveSection){
+   const {data:first,error:positionError}=await client.from('gallery_images')
+    .select('sort_order').eq('section',moveSection)
+    .order('sort_order',{ascending:true}).limit(1).maybeSingle();
+   if(positionError)throw positionError;
+   fields.sort_order=Math.min(0,first?.sort_order??0)-1;
+  }
   const {data:updated,error:updateError}=await client.from('gallery_images')
-   .update({category:slug}).in('id',moveIds).select('id,category');
+   .update(fields).in('id',moveIds).select('id,category,section');
   if(updateError)throw updateError;
   if(!updated||updated.length!==moveIds.length||
-     updated.some(p=>p.category!==slug)||
-     moveIds.some(id=>!updated.some(p=>p.id===id))){
-   throw Error('Supabase did not confirm all category changes.');
+   updated.some(p=>p.category!==slug||p.section!==moveSection)||
+   moveIds.some(id=>!updated.some(p=>p.id===id))){
+   throw Error('The photo destination could not be confirmed.');
   }
   saved=true;
-  // Independently reread the saved records. A success ribbon appears ONLY
-  // if their authoritative database categories match the clicked destination.
   const {data:verified,error:verifyError}=await client.from('gallery_images')
-   .select('id,category').in('id',moveIds);
+   .select('id,category,section').in('id',moveIds);
   if(verifyError)throw verifyError;
   if(!verified||verified.length!==moveIds.length||
-     verified.some(p=>p.category!==slug)||
-     moveIds.some(id=>!verified.some(p=>p.id===id))){
-   throw Error('The saved photo categories could not be verified.');
+   verified.some(p=>p.category!==slug||p.section!==moveSection)||
+   moveIds.some(id=>!verified.some(p=>p.id===id))){
+   throw Error('The saved photo location could not be verified.');
   }
   for(const photo of photos){
-   if(moveIds.includes(photo.id))photo.category=slug;
+   if(moveIds.includes(photo.id)){
+    photo.category=slug;
+    photo.section=moveSection;
+    if(fields.sort_order!==undefined)photo.sort_order=fields.sort_order;
+   }
   }
   selected.clear();
   endMoveMode();
-  // Remain in the original tab; moved photos disappear from this view.
-  document.querySelectorAll('.secondary [data-category]').forEach(tab=>
-   tab.setAttribute('aria-selected',String(tab.dataset.category===viewCategory)));
-  updateSelectedTabActions();
   render();
   signalGalleryChange();
   await loadPhotos();
   showMoveRibbon(message);
-  say('status',message+(fromCategories.length&&viewCategory===fromCategories[0]?' Showing the original tab.':''));
+  say('status',message+' Showing the original section and category.');
  }catch(error){
-  say('status',(saved?'The move may have saved, but verification failed: ':'Could not move photos: ')+error.message);
+  say('status',(saved?'The move may have saved, but verification failed: ':'Could not move photo: ')+error.message);
   await loadPhotos(true);
  }finally{
   button.disabled=false;
@@ -708,16 +772,19 @@ $('deleteTabForm').addEventListener('submit',async event=>{
 
 const palette=['#f2a277','#c9b4dc','#e9a4a9','#f2d36b','#b6d6a0'];
 function changeCategory(next){
+ if(movingImages)endMoveMode();
  viewCategory=next;
  selected.clear();
  updateSelectedTabActions();
- document.querySelectorAll('[data-category]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.category===next)));
+ updateMoveNavigation();
  render();
 }
 function changeSection(next){
+ if(movingImages)endMoveMode();
  viewSection=next;
  selected.clear();
  document.querySelectorAll('[data-section]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.section===next)));
+ updateMoveNavigation();
  render();
 }
 async function loadCategories(){
@@ -739,7 +806,7 @@ async function loadCategories(){
  }
  if(categories.some(c=>c.slug===previous))dropdown.value=previous;
  if(!categories.some(c=>c.slug===viewCategory))viewCategory=categories[0]?.slug||null;
- nav.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.category===viewCategory)));
+ updateMoveNavigation();
  updateSelectedTabActions();
 }
 $('createTab').addEventListener('submit',async e=>{
