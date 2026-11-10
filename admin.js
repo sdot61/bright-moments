@@ -325,7 +325,10 @@ const uploadForm=$('upload');
 function updateUploadButtonState(){
  uploadForm.classList.toggle('has-files', $('files').files.length>0);
 }
-$('files').addEventListener('change',updateUploadButtonState);
+$('files').addEventListener('change',()=>{
+ uploadForm.classList.remove('upload-complete');
+ updateUploadButtonState();
+});
 updateUploadButtonState();
 $('upload').addEventListener('submit',async e=>{
 e.preventDefault();if(!client)return;
@@ -345,7 +348,7 @@ if(uploadError)throw uploadError;
 const {error:dbError}=await client.from('gallery_images').insert({file_path:path,title:file.name.replace(/\.[^.]+$/,'').replace(/[_-]/g,' '),section:$('section').value,category:$('category').value,sort_order:firstOrder+index});
 if(dbError){await client.storage.from(bucket).remove([path]);throw dbError;}signalGalleryChange();
 }catch(error){say('status','Upload error: '+error.message);await loadPhotos();return;}}
-say('status','Photographs uploaded.');$('files').value='';updateUploadButtonState();await loadPhotos();
+say('status','Photographs uploaded.');$('files').value='';updateUploadButtonState();uploadForm.classList.add('upload-complete');await loadPhotos();
 });
 
 const GALLERY_CHANGE_KEY='bright-moments-gallery-updated-v1';
