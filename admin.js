@@ -763,6 +763,22 @@ function attachPhotoSelection(article,id){
   }
  });
 }
+// Keyboard arrows move the single selected photo, even after the grid rerenders.
+document.addEventListener('keydown',event=>{
+ if(event.defaultPrevented||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
+ if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return;
+ if($('editor').hidden||movingImages||savingReorder||selected.size!==1)return;
+ const target=event.target;
+ if(target?.closest?.('input,textarea,select,[contenteditable="true"],[role="textbox"],dialog,a'))return;
+ if(target?.closest?.('button')&&!target?.closest?.('.photo-reorder-controls'))return;
+ const id=selected.values().next().value;
+ const shown=visiblePhotos();
+ const index=shown.findIndex(photo=>photo.id===id);
+ const direction=event.key==='ArrowLeft'?-1:1;
+ if(index<0||!shown[index+direction])return;
+ event.preventDefault();
+ stepPhoto(id,direction);
+});
 function stepPhoto(id,direction){
  if(savingReorder||!selected.has(id))return;
  const visible=visiblePhotos();
@@ -791,7 +807,10 @@ async function reorderSelected(photoId,neighborId){
   if(error)throw error;
   signalGalleryChange();
   await loadPhotos(true);
-  say('status','Photo moved. Use the arrows to keep moving it.');
+  const focusedPhoto=Array.from(document.querySelectorAll('#images .item'))
+   .find(article=>article.dataset.photoId===photoId);
+  focusedPhoto?.focus({preventScroll:true});
+  say('status','Photo moved. Use the on-screen or keyboard arrows to keep moving it.');
  }catch(error){
   say('status','Could not move photo: '+error.message);
   await loadPhotos(true);
