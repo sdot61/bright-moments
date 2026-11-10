@@ -261,12 +261,12 @@ controls.setAttribute('aria-label','Reorder '+p.title);
 const left=document.createElement('button');
 left.type='button';left.className='photo-step-left';left.textContent='←';
 left.setAttribute('aria-label','Move '+p.title+' one place left');
-left.title='Move left';left.disabled=index===0;
+left.title='Move selected photos left';left.disabled=index===0;
 left.addEventListener('click',event=>{event.stopPropagation();void stepPhoto(p.id,-1);});
 const right=document.createElement('button');
 right.type='button';right.className='photo-step-right';right.textContent='→';
 right.setAttribute('aria-label','Move '+p.title+' one place right');
-right.title='Move right';right.disabled=index===shown.length-1;
+right.title='Move selected photos right';right.disabled=index===shown.length-1;
 right.addEventListener('click',event=>{event.stopPropagation();void stepPhoto(p.id,1);});
 controls.append(left,right);
 photo.append(img,indicator,controls);
@@ -275,6 +275,7 @@ const meta=document.createElement('p');meta.textContent=p.section+' · '+(catego
 article.append(photo,title,meta);container.append(article);
 }
 if(!container.children.length)container.textContent='No photographs in this selection yet.';
+updatePhotoSelectionControls();
 }
 function editPhotoTitle(heading,photo){
  if(heading.dataset.editing==='true')return;
@@ -389,8 +390,8 @@ let deletingPhotos=false;
 async function removeSelected(){
  if(!client||!currentAdminId||!idleCheck()||deletingPhotos)return;
  const chosen=photos.filter(p=>selected.has(p.id));
- if(!chosen.length){say('status','Select a photograph first.');return;}
- if(!confirm('Permanently remove the selected photograph from Bright Moments?'))return;
+ if(!chosen.length){say('status','Select one or more photographs first.');return;}
+ if(!confirm('Permanently remove '+chosen.length+' selected photograph'+(chosen.length===1?'':'s')+' from Bright Moments?'))return;
  deletingPhotos=true;
  const deleteButton=$('delete');deleteButton.disabled=true;
  say('status','Deleting selected photographs…');
@@ -448,7 +449,7 @@ function updateMoveNavigation(){
   const active=button.dataset.moveSection===selectedSection;
   button.setAttribute('aria-pressed',String(active));
   button.setAttribute('aria-label',movingImages?
-   'Move selected photo to '+sectionLabel(button.dataset.moveSection):
+   'Move selected photos to '+sectionLabel(button.dataset.moveSection):
    'View '+sectionLabel(button.dataset.moveSection)+' photographs');
  });
  const nav=document.querySelector('#editor nav.secondary');
@@ -466,7 +467,7 @@ function updateMoveNavigation(){
  });
  const hint=$('moveSectionInstruction');
  hint.hidden=!movingImages;
- if(movingImages)hint.textContent='Moving to '+sectionLabel(moveDestinationSection)+': choose a colored category below, or switch Store / Gallery above.';
+ if(movingImages)hint.textContent='Moving '+selected.size+' selected photo'+(selected.size===1?'':'s')+' to '+sectionLabel(moveDestinationSection)+': choose a colored category below, or switch Store / Gallery above.';
 }
 function endMoveMode(){
  movingImages=false;
@@ -496,7 +497,7 @@ document.querySelectorAll('#miniSectionNav [data-move-section]').forEach(button=
   if(movingImages){
    moveDestinationSection=section;
    updateMoveNavigation();
-   say('status','Moving selected photo to '+sectionLabel(section)+'. Choose a category below.');
+   say('status','Moving '+selected.size+' selected photo'+(selected.size===1?'':'s')+' to '+sectionLabel(section)+'. Choose a category below.');
   }else{
    changeSection(section);
   }
@@ -509,13 +510,13 @@ $('moveImage').addEventListener('click',()=>{
   say('status','Move canceled.');
   return;
  }
- if(!selected.size){say('status','Select a photo to move.');return;}
+ if(!selected.size){say('status','Select one or more photos to move.');return;}
  movingImages=true;
  moveDestinationSection=viewSection;
  document.body.classList.add('moving-images');
  $('moveImage').setAttribute('aria-pressed','true');
  updateMoveNavigation();
- say('status','Choose Store or Gallery, then choose the destination category below.');
+ say('status','Choose Store or Gallery, then a destination category for '+selected.size+' selected photo'+(selected.size===1?'':'s')+'.');
 });
 async function moveToCategory(slug){
  if(!movingImages)return;
@@ -525,30 +526,23 @@ async function moveToCategory(slug){
  if(button.disabled)return;
  const moveSection=moveDestinationSection;
  const original=new Map(photos.map(p=>[p.id,{category:p.category,section:p.section}]));
- const moveIds=[...selected].filter(id=>{
+ const moveIds=visiblePhotos().map(p=>p.id).filter(id=>selected.has(id)).filter(id=>{
   const entry=original.get(id);
   return entry&&(entry.category!==slug||entry.section!==moveSection);
  });
  if(!moveIds.length){
-  say('status','The selected photo is already in '+sectionLabel(moveSection)+' / '+destination.label+'. Choose another destination.');
+  say('status','The selected photos are already in '+sectionLabel(moveSection)+' / '+destination.label+'. Choose another destination.');
   return;
  }
  const source=original.get(moveIds[0]);
  const originalCategory=categories.find(c=>c.slug===source.category)?.label||source.category;
- const message='Photo moved from '+sectionLabel(source.section)+' / '+originalCategory+
+ const message=moveIds.length+' photo'+(moveIds.length===1?'':'s')+' moved from '+sectionLabel(source.section)+' / '+originalCategory+
   ' to '+sectionLabel(moveSection)+' / '+destination.label+'.';
  button.disabled=true;
  let saved=false;
  try{
+  // Update all selected photo destinations together.
   const fields={category:slug,section:moveSection};
-  // A photo transferred to another parent space appears at the front there.
-  if(source.section!==moveSection){
-   const {data:first,error:positionError}=await client.from('gallery_images')
-    .select('sort_order').eq('section',moveSection)
-    .order('sort_order',{ascending:true}).limit(1).maybeSingle();
-   if(positionError)throw positionError;
-   fields.sort_order=Math.min(0,first?.sort_order??0)-1;
-  }
   const {data:updated,error:updateError}=await client.from('gallery_images')
    .update(fields).in('id',moveIds).select('id,category,section');
   if(updateError)throw updateError;
@@ -566,11 +560,26 @@ async function moveToCategory(slug){
    moveIds.some(id=>!verified.some(p=>p.id===id))){
    throw Error('The saved photo location could not be verified.');
   }
+  let reorderWarning='';
+  // Place the transferred photos together at the start of their new section.
+  if(source.section!==moveSection){
+   try{
+    const {data:destinationPhotos,error:listError}=await client.from('gallery_images')
+     .select('id').eq('section',moveSection)
+     .order('sort_order',{ascending:true}).order('created_at',{ascending:true});
+    if(listError)throw listError;
+    const transferred=new Set(moveIds);
+    const targetOrder=[...moveIds,...(destinationPhotos||[]).map(p=>p.id).filter(id=>!transferred.has(id))];
+    const {error:orderError}=await client.rpc('reorder_bright_moments_images',{image_ids:targetOrder});
+    if(orderError)throw orderError;
+   }catch(orderError){
+    reorderWarning=' Photos transferred, but their order could not be saved: '+orderError.message;
+   }
+  }
   for(const photo of photos){
    if(moveIds.includes(photo.id)){
     photo.category=slug;
     photo.section=moveSection;
-    if(fields.sort_order!==undefined)photo.sort_order=fields.sort_order;
    }
   }
   selected.clear();
@@ -579,7 +588,7 @@ async function moveToCategory(slug){
   signalGalleryChange();
   await loadPhotos();
   showMoveRibbon(message);
-  say('status',message+' Showing the original section and category.');
+  say('status',message+' Showing the original section and category.'+reorderWarning);
  }catch(error){
   say('status',(saved?'The move may have saved, but verification failed: ':'Could not move photo: ')+error.message);
   await loadPhotos(true);
@@ -839,18 +848,39 @@ $('createTab').addEventListener('submit',async e=>{
 });
 
 
-// Only one photo may be selected. Image dragging is disabled.
-function toggleCellSelection(id){
- const wasSelected=selected.has(id);
- selected.clear();
- if(!wasSelected)selected.add(id);
+// Clicking a photo toggles only that photo; arrow keys move the whole selection.
+function selectedCanStep(direction,visible=visiblePhotos()){
+ return visible.some((photo,index)=>{
+  const adjacent=visible[index+direction];
+  return selected.has(photo.id)&&adjacent&&!selected.has(adjacent.id);
+ });
+}
+function updatePhotoSelectionControls(){
+ const visible=visiblePhotos();
+ const canLeft=selectedCanStep(-1,visible),canRight=selectedCanStep(1,visible);
  document.querySelectorAll('#images .item').forEach(article=>{
   const active=selected.has(article.dataset.photoId);
   article.classList.toggle('selected',active);
   article.setAttribute('aria-pressed',String(active));
   const check=article.querySelector('.check');
   if(check)check.textContent=active?'✓':'';
+  const left=article.querySelector('.photo-step-left');
+  const right=article.querySelector('.photo-step-right');
+  if(left)left.disabled=!active||!canLeft||savingReorder;
+  if(right)right.disabled=!active||!canRight||savingReorder;
+  const caption=selected.size===1?'selected photo':selected.size+' selected photos';
+  if(left)left.setAttribute('aria-label','Move '+caption+' left');
+  if(right)right.setAttribute('aria-label','Move '+caption+' right');
  });
+}
+function toggleCellSelection(id){
+ if(selected.has(id))selected.delete(id);
+ else selected.add(id);
+ updatePhotoSelectionControls();
+ say('status',selected.size?
+  selected.size+' photo'+(selected.size===1?'':'s')+' selected. Use arrows or choose Move Image / Delete selected.':
+  'No photos selected.');
+ if(movingImages)updateMoveNavigation();
 }
 function attachPhotoSelection(article,id){
  article.addEventListener('click',event=>{
@@ -865,58 +895,63 @@ function attachPhotoSelection(article,id){
   }
  });
 }
-// Keyboard arrows move the single selected photo, even after the grid rerenders.
 document.addEventListener('keydown',event=>{
  if(event.defaultPrevented||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
  if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return;
- if($('editor').hidden||movingImages||savingReorder||selected.size!==1)return;
+ if($('editor').hidden||movingImages||savingReorder||!selected.size)return;
  const target=event.target;
  if(target?.closest?.('input,textarea,select,[contenteditable="true"],[role="textbox"],dialog,a'))return;
  if(target?.closest?.('button')&&!target?.closest?.('.photo-reorder-controls'))return;
- const id=selected.values().next().value;
- const shown=visiblePhotos();
- const index=shown.findIndex(photo=>photo.id===id);
  const direction=event.key==='ArrowLeft'?-1:1;
- if(index<0||!shown[index+direction])return;
+ if(!selectedCanStep(direction))return;
  event.preventDefault();
- stepPhoto(id,direction);
+ stepPhotos(direction,selected.values().next().value);
 });
 function stepPhoto(id,direction){
  if(savingReorder||!selected.has(id))return;
- const visible=visiblePhotos();
- const index=visible.findIndex(p=>p.id===id);
- const adjacent=visible[index+direction];
- if(index<0||!adjacent)return;
- void reorderSelected(id,adjacent.id);
+ stepPhotos(direction,id);
 }
-async function reorderSelected(photoId,neighborId){
- if(savingReorder||!selected.has(photoId))return;
- const visible=visiblePhotos();
- const from=visible.findIndex(p=>p.id===photoId);
- const to=visible.findIndex(p=>p.id===neighborId);
- if(from<0||to<0||Math.abs(from-to)!==1)return;
- const rearranged=visible.slice();
- [rearranged[from],rearranged[to]]=[rearranged[to],rearranged[from]];
+async function stepPhotos(direction,focusedId){
+ if(savingReorder||!selected.size||!selectedCanStep(direction))return;
+ const visible=visiblePhotos(),rearranged=visible.slice();
+ if(direction<0){
+  for(let i=1;i<rearranged.length;i++){
+   if(selected.has(rearranged[i].id)&&!selected.has(rearranged[i-1].id)){
+    [rearranged[i-1],rearranged[i]]=[rearranged[i],rearranged[i-1]];
+   }
+  }
+ }else{
+  for(let i=rearranged.length-2;i>=0;i--){
+   if(selected.has(rearranged[i].id)&&!selected.has(rearranged[i+1].id)){
+    [rearranged[i],rearranged[i+1]]=[rearranged[i+1],rearranged[i]];
+   }
+  }
+ }
+ if(rearranged.every((p,index)=>p.id===visible[index].id))return;
  const full=photos.filter(p=>p.section===viewSection).slice()
   .sort((a,b)=>a.sort_order-b.sort_order||a.created_at.localeCompare(b.created_at));
  const visibleIds=new Set(visible.map(p=>p.id));
  let offset=0;
  const reorderedFull=full.map(p=>visibleIds.has(p.id)?rearranged[offset++]:p);
  savingReorder=true;
+ updatePhotoSelectionControls();
  say('status','Saving the new photo order…');
  try{
   const {error}=await client.rpc('reorder_bright_moments_images',{image_ids:reorderedFull.map(p=>p.id)});
   if(error)throw error;
   signalGalleryChange();
   await loadPhotos(true);
-  const focusedPhoto=Array.from(document.querySelectorAll('#images .item'))
-   .find(article=>article.dataset.photoId===photoId);
-  focusedPhoto?.focus({preventScroll:true});
-  say('status','Photo moved. Use the on-screen or keyboard arrows to keep moving it.');
+  const focused=Array.from(document.querySelectorAll('#images .item'))
+   .find(article=>article.dataset.photoId===focusedId);
+  focused?.focus({preventScroll:true});
+  say('status',selected.size+' photo'+(selected.size===1?'':'s')+' moved. Continue using the arrows to reorder.');
  }catch(error){
-  say('status','Could not move photo: '+error.message);
+  say('status','Could not save photo order: '+error.message);
   await loadPhotos(true);
- }finally{savingReorder=false;}
+ }finally{
+  savingReorder=false;
+  updatePhotoSelectionControls();
+ }
 }
 
 document.querySelectorAll('[data-section]').forEach(button=>{
