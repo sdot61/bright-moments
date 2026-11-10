@@ -1,7 +1,7 @@
 const cfg=window.BRIGHT_MOMENTS_SUPABASE||{};
 const $=id=>document.getElementById(id);
 const show=(id,on)=>$(id).hidden=!on;
-let client=null,photos=[],categories=[],selected=new Set(),viewSection="gallery",viewCategory="all",savingReorder=false;
+let client=null,photos=[],categories=[],selected=new Set(),viewSection="gallery",viewCategory=null,savingReorder=false;
 const say=(id,message)=>$(id).textContent=message;
 // Keep editor sessions across refreshes; expire after 24 hours with no owner activity.
 const IDLE_DURATION_MS=24*60*60*1000;
@@ -423,7 +423,7 @@ async function removeSelected(){
 $('delete').addEventListener('click',removeSelected);
 
 function visiblePhotos(){
- return photos.filter(p=>p.section===viewSection&&(viewCategory==='all'||p.category===viewCategory))
+ return photos.filter(p=>p.section===viewSection&&p.category===viewCategory)
   .sort((a,b)=>a.sort_order-b.sort_order||a.created_at.localeCompare(b.created_at));
 }
 
@@ -460,7 +460,7 @@ $('moveImage').addEventListener('click',()=>{
  say('status','Choose the destination tab for the selected photo.');
 });
 async function moveToCategory(slug){
- if(!movingImages||slug==='all')return;
+ if(!movingImages)return;
  const destination=categories.find(c=>c.slug===slug);
  if(!destination)return;
  const button=$('moveImage');
@@ -504,9 +504,7 @@ async function moveToCategory(slug){
   }
   selected.clear();
   endMoveMode();
-  // All is an aggregate view: show the actual source tab so the moved photos
-  // visibly disappear instead of still appearing in All under the new category.
-  if(viewCategory==='all'&&fromCategories.length)viewCategory=fromCategories[0];
+  // Remain in the original tab; moved photos disappear from this view.
   document.querySelectorAll('.secondary [data-category]').forEach(tab=>
    tab.setAttribute('aria-selected',String(tab.dataset.category===viewCategory)));
   updateSelectedTabActions();
@@ -535,7 +533,7 @@ function clearCategoryDragHighlights(){
 function categoryDropTarget(x,y){
  const element=document.elementFromPoint(x,y);
  const button=element?.closest('.secondary button[data-category]');
- return button&&button.dataset.category!=='all'?button:null;
+ return button||null;
 }
 function trackCategoryTabDrag(event){
  const drag=categoryTabDrag;
@@ -665,7 +663,7 @@ $('deleteTabForm').addEventListener('submit',async event=>{
   if(error)throw error;
   pendingDeleteTab=null;
   $('deleteTabDialog').close();
-  viewCategory='all';
+  viewCategory=null;
   selected.clear();
   await loadCategories();
   await loadPhotos();
@@ -696,9 +694,6 @@ async function loadCategories(){
  categories=data||[];
  const nav=document.querySelector('.secondary');
  nav.replaceChildren();
- const all=document.createElement('button');all.type='button';all.dataset.category='all';all.textContent='All';all.style.backgroundColor='#b6d6a0';
- 
- all.addEventListener('click',()=>selectCategoryTab('all'));nav.append(all);
  const dropdown=$('category');const previous=dropdown.value;
  dropdown.replaceChildren();
  for(const c of categories){
@@ -711,7 +706,7 @@ async function loadCategories(){
   nav.append(button);
  }
  if(categories.some(c=>c.slug===previous))dropdown.value=previous;
- if(viewCategory!=='all'&&!categories.some(c=>c.slug===viewCategory))viewCategory='all';
+ if(!categories.some(c=>c.slug===viewCategory))viewCategory=categories[0]?.slug||null;
  nav.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.category===viewCategory)));
  updateSelectedTabActions();
 }
