@@ -152,3 +152,6 @@ body.reordering-tabs{user-select:none;-webkit-user-select:none}
  background:#c7cbd2;color:#fff;opacity:.7;cursor:not-allowed
 }
 #editor .photo-reorder-controls button:focus-visible{outline:3px solid #2469df;outline-offset:2px}
+
+#deleteTabDestination:focus-visible{outline:2px solid #802c43;outline-offset:3px}
+#confirmDeleteTab:disabled{opacity:.5;cursor:not-allowed}
