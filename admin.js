@@ -616,54 +616,86 @@ $('deleteTab').addEventListener('click',async()=>{
  const current=categories.find(c=>c.slug===viewCategory);
  if(!current||categoryDeleteSaving||!currentAdminId||!idleCheck())return;
  if(movingImages)endMoveMode();
- say('tabMessage','Checking tab contents…');
- const {count,error}=await client.from('gallery_images')
-  .select('id',{head:true,count:'exact'}).eq('category',current.slug);
- if(error){say('tabMessage','Could not check tab contents: '+error.message);return;}
- const choices=categories.filter(c=>c.slug!==current.slug);
- if(count>0&&!choices.length){
-  say('tabMessage','Add another tab before deleting this one, so its photos have somewhere to go.');
-  return;
- }
- pendingDeleteTab={slug:current.slug,label:current.label};
+ // Open the confirmation popup immediately; no category is removed on this click.
+ const pending={slug:current.slug,label:current.label,photoCount:null};
+ pendingDeleteTab=pending;
  $('deleteTabTitle').textContent='Delete '+current.label+' tab?';
- $('deleteTabExplanation').textContent=count>0
-  ?'This tab contains '+count+' photo'+(count===1?'':'s')+'. Select a destination; its photos will be moved, not deleted.'
-  :'This tab is empty. Deleting it will not delete any photographs.';
- const transfer=$('deleteTabTransfer');
- transfer.hidden=count===0;
+ $('deleteTabExplanation').textContent='Checking how many photos need to be moved…';
+ $('deleteTabTransfer').hidden=true;
  const dropdown=$('deleteTabDestination');
  dropdown.replaceChildren();
- for(const choice of choices){
-  const option=document.createElement('option');
-  option.value=choice.slug;
-  option.textContent=choice.label;
-  dropdown.add(option);
- }
+ dropdown.required=false;
+ $('confirmDeleteTab').disabled=true;
+ $('confirmDeleteTab').textContent='Checking photos…';
  $('deleteTabError').textContent='';
- say('tabMessage','');
  $('deleteTabDialog').showModal();
+ const {count,error}=await client.from('gallery_images')
+  .select('id',{head:true,count:'exact'}).eq('category',current.slug);
+ if(pendingDeleteTab!==pending||!$('deleteTabDialog').open)return;
+ if(error){
+  $('deleteTabExplanation').textContent='Unable to check the photos in this tab.';
+  $('deleteTabError').textContent='Please cancel and try again: '+error.message;
+  return;
+ }
+ pending.photoCount=count??0;
+ const choices=categories.filter(c=>c.slug!==current.slug);
+ if(pending.photoCount>0){
+  $('deleteTabExplanation').textContent='This tab contains '+pending.photoCount+' photo'+(pending.photoCount===1?'':'s')+
+   '. Choose another tab to move '+(pending.photoCount===1?'it':'them')+' to before deleting this tab.';
+  $('deleteTabTransfer').hidden=false;
+  dropdown.required=true;
+  const placeholder=document.createElement('option');
+  placeholder.value='';
+  placeholder.textContent='Choose destination tab…';
+  placeholder.disabled=true;
+  placeholder.selected=true;
+  dropdown.add(placeholder);
+  for(const choice of choices){
+   const option=document.createElement('option');
+   option.value=choice.slug;
+   option.textContent=choice.label;
+   dropdown.add(option);
+  }
+  $('confirmDeleteTab').textContent='Move photos and delete tab';
+  if(!choices.length){
+   $('deleteTabError').textContent='Create another tab first so these photos have somewhere to go.';
+   return;
+  }
+ }else{
+  $('deleteTabExplanation').textContent='This tab has no photos. You can delete it without moving anything.';
+  $('confirmDeleteTab').textContent='Delete empty tab';
+ }
+ $('confirmDeleteTab').disabled=false;
 });
 $('cancelDeleteTab').addEventListener('click',()=>$('deleteTabDialog').close());
-$('deleteTabDialog').addEventListener('close',()=>{if(!categoryDeleteSaving)pendingDeleteTab=null;});
+$('deleteTabDialog').addEventListener('close',()=>{
+ if(!categoryDeleteSaving)pendingDeleteTab=null;
+});
 $('deleteTabForm').addEventListener('submit',async event=>{
  event.preventDefault();
  if(categoryDeleteSaving||!pendingDeleteTab||!currentAdminId||!idleCheck())return;
+ const {slug,label,photoCount}=pendingDeleteTab;
+ if(photoCount===null)return;
+ const destination=photoCount>0?$('deleteTabDestination').value:null;
+ if(photoCount>0&&(!destination||destination===slug||!categories.some(c=>c.slug===destination))){
+  $('deleteTabError').textContent='Choose another tab for these photos before deleting.';
+  $('deleteTabDestination').focus();
+  return;
+ }
  categoryDeleteSaving=true;
  const confirmButton=$('confirmDeleteTab');
  confirmButton.disabled=true;
- $('deleteTabError').textContent='Deleting tab…';
- const {slug,label}=pendingDeleteTab;
- const destination=$('deleteTabTransfer').hidden?null:$('deleteTabDestination').value;
+ $('deleteTabError').textContent=photoCount>0?'Moving photos and deleting tab…':'Deleting empty tab…';
  const destinationName=categories.find(c=>c.slug===destination)?.label;
  try{
+  // The database handles the photo move and category deletion together.
   const {data,error}=await client.rpc('delete_bright_moments_category',{
    category_slug:slug,move_photos_to:destination
   });
   if(error)throw error;
   pendingDeleteTab=null;
   $('deleteTabDialog').close();
-  viewCategory=null;
+  viewCategory=destination||null;
   selected.clear();
   await loadCategories();
   await loadPhotos();
