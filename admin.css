@@ -198,3 +198,9 @@ body.moving-images #editor .secondary[data-move-palette="gallery"] button[data-c
 #editor .store-price-panel input[type="checkbox"]{width:20px;height:20px;accent-color:#248745}
 #editor .store-price-panel button{margin:0;border:0;border-radius:5px;background:var(--navy);color:#fff;font-size:14px;padding:10px}
 #editor .store-price-panel button:disabled{opacity:.55;cursor:wait}
+
+.thumbnail-progress{margin:12px 0 20px;padding:10px 14px;border:1px solid #d1d9e5;border-radius:6px;background:#f8fbff}
+.thumbnail-progress p{margin:5px 0;font-size:13px;line-height:1.5}
+#optimizeExisting{font-family:inherit;background:#3d4f90;color:white;border:0;border-radius:4px;padding:9px 13px;font-size:13px;cursor:pointer}
+#optimizeExisting[hidden]{display:none!important}
+#optimizeExisting:disabled{opacity:.5;cursor:wait}
