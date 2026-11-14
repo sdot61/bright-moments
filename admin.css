@@ -189,3 +189,12 @@ body.moving-images #editor .secondary[data-move-palette="store"] button[data-cat
 body.moving-images #editor .secondary[data-move-palette="gallery"] button[data-category]{
  box-shadow:inset 0 -4px 0 rgba(255,255,255,.15),0 2px 4px rgba(70,30,55,.18)
 }
+
+/* Prices are edited only in the owner panel. */
+#editor .store-price-panel{margin:12px 0 0;border:1px solid #c7d0e8;border-radius:6px;padding:12px;display:grid;gap:10px;background:#fbfcff}
+#editor .store-price-panel>label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:800}
+#editor .store-price-panel input[type="number"]{width:100%;font-size:16px;padding:8px;margin:0}
+#editor .store-price-panel .store-available-label{display:flex;flex-direction:row;align-items:center;font-size:13px;gap:7px}
+#editor .store-price-panel input[type="checkbox"]{width:20px;height:20px;accent-color:#248745}
+#editor .store-price-panel button{margin:0;border:0;border-radius:5px;background:var(--navy);color:#fff;font-size:14px;padding:10px}
+#editor .store-price-panel button:disabled{opacity:.55;cursor:wait}
