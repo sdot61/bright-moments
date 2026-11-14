@@ -168,6 +168,10 @@ async function checkAuth(){
  await loadCategories();
  await loadPhotos();
  await loadAccessRequests();
+ if(!startedExistingOptimization){
+  startedExistingOptimization=true;
+  void backfillExistingThumbnails();
+ }
  cleanPendingStorageFiles().then(result=>{if(result.pending)say('status','Some previously deleted Supabase image files are awaiting cleanup. They will be retried.');}).catch(error=>console.warn('Could not retry pending storage cleanup',error));
 }
 $('signin').addEventListener('submit',async event=>{
@@ -243,7 +247,7 @@ function url(path){if(path.startsWith('github:'))return 'https://raw.githubuserc
 async function loadPhotos(keepSelection=false){
 const {data,error}=await client.from('gallery_images').select('*').order('sort_order',{ascending:true}).order('created_at',{ascending:true});
 if(error){say('status',error.message);return;}
-photos=data||[];if(!keepSelection)selected.clear();render();
+photos=data||[];if(!keepSelection)selected.clear();render();updateThumbnailStatus();
 }
 function render(){
 const container=$('images');container.replaceChildren();
@@ -251,7 +255,8 @@ const shown=visiblePhotos();
 for(const [index,p] of shown.entries()){
 const article=document.createElement('article');article.className='item';article.dataset.photoId=p.id;article.tabIndex=0;article.setAttribute('role','button');article.setAttribute('aria-label','Select photo '+p.title);article.setAttribute('aria-pressed',String(selected.has(p.id)));if(selected.has(p.id))article.classList.add('selected');
 const photo=document.createElement('div');photo.className='photo';
-const img=document.createElement('img');img.src=url(p.file_path);img.alt=p.title;img.loading='lazy';img.draggable=false;
+const img=document.createElement('img');img.src=url(p.thumbnail_path||p.file_path);img.alt=p.title;img.loading='lazy';img.decoding='async';img.draggable=false;
+if(p.thumbnail_path)img.addEventListener('error',()=>{img.src=url(p.file_path);},{once:true});
 const indicator=document.createElement('span');indicator.className='check';indicator.setAttribute('aria-hidden','true');indicator.textContent=selected.has(p.id)?'✓':'';
 attachPhotoSelection(article,p.id);
 const controls=document.createElement('div');
@@ -365,9 +370,67 @@ async function optimize(file){
 const bitmap=await createImageBitmap(file);
 const scale=Math.min(1,2200/Math.max(bitmap.width,bitmap.height));
 const canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);
-canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();
+const context=canvas.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);
+context.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();
 return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('Image conversion failed')),'image/jpeg',.83));
 }
+async function makeThumbnail(blob){
+ const bitmap=await createImageBitmap(blob);
+ const scale=Math.min(1,900/Math.max(bitmap.width,bitmap.height));
+ const canvas=document.createElement('canvas');
+ canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+ const context=canvas.getContext('2d',{alpha:false});
+ context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);
+ context.drawImage(bitmap,0,0,canvas.width,canvas.height);
+ bitmap.close();
+ return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('Thumbnail conversion failed')),'image/jpeg',.72));
+}
+let optimizingExisting=false;
+let startedExistingOptimization=false;
+function updateThumbnailStatus(){
+ const pending=photos.filter(p=>!p.thumbnail_path).length;
+ const status=$('optimizeImagesStatus');
+ const button=$('optimizeExisting');
+ if(!status||!button)return;
+ if(!optimizingExisting)status.textContent=pending?pending+' existing picture'+(pending===1?'':'s')+' still need optimized previews.':'All existing pictures have optimized previews.';
+ button.hidden=!pending&&!optimizingExisting;
+ button.disabled=optimizingExisting;
+}
+async function backfillExistingThumbnails(){
+ if(optimizingExisting||!client||!currentAdminId||!idleCheck())return;
+ const pending=photos.filter(p=>!p.thumbnail_path);
+ if(!pending.length){updateThumbnailStatus();return;}
+ optimizingExisting=true;updateThumbnailStatus();
+ let converted=0,failed=0;
+ const status=$('optimizeImagesStatus');
+ for(const [index,p] of pending.entries()){
+  if(!currentAdminId||!idleCheck()||document.hidden)break;
+  status.textContent='Preparing fast thumbnails: '+(index+1)+' of '+pending.length+' (created '+converted+', skipped '+failed+').';
+  try{
+   const result=await fetch(url(p.file_path),{mode:'cors',cache:'force-cache'});
+   if(!result.ok)throw Error('Source image returned '+result.status);
+   const image=await result.blob();
+   const thumbnail=await makeThumbnail(image);
+   const path='thumbs/'+p.id+'.jpg';
+   const upload=await client.storage.from(bucket).upload(path,thumbnail,{
+    contentType:'image/jpeg',cacheControl:'31536000',upsert:true
+   });
+   if(upload.error)throw upload.error;
+   const saved=await client.from('gallery_images')
+    .update({thumbnail_path:path}).eq('id',p.id).is('thumbnail_path',null)
+    .select('id,thumbnail_path').maybeSingle();
+   if(saved.error)throw saved.error;
+   p.thumbnail_path=path;
+   converted++;
+   if(converted%10===0)signalGalleryChange();
+  }catch(error){failed++;console.warn('Preview generation skipped for '+p.title,error);}
+ }
+ optimizingExisting=false;
+ if(converted)signalGalleryChange();
+ render();updateThumbnailStatus();
+ if(failed)status.textContent='Created '+converted+' thumbnails. '+failed+' could not be processed; click Retry to attempt them again.';
+}
+$('optimizeExisting').addEventListener('click',()=>{void backfillExistingThumbnails();});
 const uploadForm=$('upload');
 function updateUploadButtonState(){
  uploadForm.classList.toggle('has-files', $('files').files.length>0);
@@ -389,11 +452,15 @@ if(orderError){say('status','Could not determine photo order: '+orderError.messa
 const firstOrder=Math.min(0,topPhoto?.sort_order??0)-files.length;
 for(const [index,file] of files.entries()){try{
 const blob=await optimize(file);
-const path=crypto.randomUUID()+'.jpg';
-const {error:uploadError}=await client.storage.from(bucket).upload(path,blob,{contentType:'image/jpeg',upsert:false});
+const thumbnail=await makeThumbnail(blob);
+const id=crypto.randomUUID();
+const path=id+'.jpg',thumbPath='thumbs/'+id+'.jpg';
+const {error:uploadError}=await client.storage.from(bucket).upload(path,blob,{contentType:'image/jpeg',cacheControl:'31536000',upsert:false});
 if(uploadError)throw uploadError;
-const {error:dbError}=await client.from('gallery_images').insert({file_path:path,title:file.name.replace(/\.[^.]+$/,'').replace(/[_-]/g,' '),section:$('section').value,category:$('category').value,sort_order:firstOrder+index});
-if(dbError){await client.storage.from(bucket).remove([path]);throw dbError;}signalGalleryChange();
+const {error:thumbnailError}=await client.storage.from(bucket).upload(thumbPath,thumbnail,{contentType:'image/jpeg',cacheControl:'31536000',upsert:false});
+if(thumbnailError){await client.storage.from(bucket).remove([path]);throw thumbnailError;}
+const {error:dbError}=await client.from('gallery_images').insert({file_path:path,thumbnail_path:thumbPath,title:file.name.replace(/\.[^.]+$/,'').replace(/[_-]/g,' '),section:$('section').value,category:$('category').value,sort_order:firstOrder+index});
+if(dbError){await client.storage.from(bucket).remove([path,thumbPath]);throw dbError;}signalGalleryChange();
 }catch(error){say('status','Upload error: '+error.message);await loadPhotos();return;}}
 say('status','Photographs uploaded.');$('files').value='';updateUploadButtonState();uploadForm.classList.add('upload-complete');await loadPhotos();
 });
