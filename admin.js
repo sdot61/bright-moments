@@ -275,6 +275,7 @@ const meta=document.createElement('p');meta.textContent=p.section+' · '+(catego
 article.append(photo,title,meta);
 if(p.section==='store'){
  const panel=document.createElement('div');panel.className='store-price-panel';
+ panel.addEventListener('click',event=>event.stopPropagation());
  const priceLabel=document.createElement('label');priceLabel.textContent='Price (USD)';
  const price=document.createElement('input');price.type='number';price.min='0.50';price.max='999999.99';
  price.step='0.01';price.inputMode='decimal';price.placeholder='Enter price';
