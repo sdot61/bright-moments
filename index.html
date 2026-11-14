@@ -224,8 +224,8 @@ function render(){
    price.textContent=Number.isSafeInteger(p.priceCents)&&p.priceCents>=50?dollars(p.priceCents):'Price coming soon';
    article.append(price);
    const buy=document.createElement('button');buy.type='button';buy.className='buy';
-   buy.disabled=!canPurchase(p);
-   buy.textContent=!canPurchase(p)?'Not available':cartIds.has(p.id)?'In cart · Add again?':'Add to cart';
+   buy.disabled=!canPurchase(p)||cartIds.has(p.id);
+   buy.textContent=!canPurchase(p)?'Not available':cartIds.has(p.id)?'Added to cart':'Add to cart';
    buy.addEventListener('click',()=>addToCart(p));
    article.append(buy);
   }
