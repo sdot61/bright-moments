@@ -272,7 +272,52 @@ controls.append(left,right);
 photo.append(img,indicator,controls);
 const title=document.createElement('h3');title.textContent=p.title;title.className='editable-photo-title';title.tabIndex=0;title.setAttribute('role','button');title.setAttribute('aria-label','Edit title: '+p.title);title.setAttribute('title','Edit title');title.addEventListener('click',event=>{event.stopPropagation();editPhotoTitle(title,p);});title.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();editPhotoTitle(title,p);}});
 const meta=document.createElement('p');meta.textContent=p.section+' · '+(categories.find(c=>c.slug===p.category)?.label||p.category);
-article.append(photo,title,meta);container.append(article);
+article.append(photo,title,meta);
+if(p.section==='store'){
+ const panel=document.createElement('div');panel.className='store-price-panel';
+ const priceLabel=document.createElement('label');priceLabel.textContent='Price (USD)';
+ const price=document.createElement('input');price.type='number';price.min='0.50';price.max='999999.99';
+ price.step='0.01';price.inputMode='decimal';price.placeholder='Enter price';
+ price.value=Number.isSafeInteger(p.price_cents)?(p.price_cents/100).toFixed(2):'';
+ priceLabel.append(price);
+ const saleLabel=document.createElement('label');saleLabel.className='store-available-label';
+ const available=document.createElement('input');available.type='checkbox';available.checked=p.available===true;
+ saleLabel.append(available,document.createTextNode('Available to purchase'));
+ const save=document.createElement('button');save.type='button';save.textContent='Save price';
+ save.addEventListener('click',async()=>{
+  if(!currentAdminId||!idleCheck())return;
+  const input=price.value.trim();
+  const number=Number(input);
+  const cents=input===''?null:Math.round(number*100);
+  if(input!==''&&(!Number.isFinite(number)||!Number.isSafeInteger(cents)||
+   cents<50||cents>99999999||Math.abs(cents/100-number)>0.001)){
+   say('status','Enter a valid dollar amount of at least $0.50, or leave it blank.');
+   return;
+  }
+  if(available.checked&&cents===null){
+   say('status','Set a price before making this item available.');
+   return;
+  }
+  save.disabled=true;
+  try{
+   const changes={price_cents:cents,available:cents!==null&&available.checked};
+   const {data,error}=await client.from('gallery_images').update(changes)
+    .eq('id',p.id).select('id,price_cents,available').single();
+   if(error)throw error;
+   if(data.price_cents!==changes.price_cents||data.available!==changes.available)
+    throw Error('The saved price could not be confirmed.');
+   p.price_cents=data.price_cents;p.available=data.available;
+   signalGalleryChange();
+   say('status',p.title+' price and availability saved.');
+   await loadPhotos(true);
+  }catch(error){
+   say('status','Could not save store price: '+error.message);
+   save.disabled=false;
+  }
+ });
+ panel.append(priceLabel,saleLabel,save);article.append(panel);
+}
+container.append(article);
 }
 if(!container.children.length)container.textContent='No photographs in this selection yet.';
 updatePhotoSelectionControls();
