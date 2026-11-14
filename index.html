@@ -12,7 +12,28 @@ button,.tabs button,.hero .primary button,.buy{font-family:var(--comic);color:#f
 .brand-edit-link:hover{background:#eef1f9}
 .brand-edit-link:focus-visible{outline:2px solid var(--navy);outline-offset:3px}
 .brand-edit-link[hidden]{display:none!important}
-</style></head><body><header><a id="brandNavigation" class="brand-link" href="./" aria-label="Bright Moments Mosaics home"><h1 class="logo">Bright Moments Mosaics</h1><p class="subtitle">Mosaic art &amp; objects</p></a></header><div class="hero"><div class="brand-banner"><img src="https://raw.githubusercontent.com/sdot61/bright-moments/main/IMG_20240513_111051154_HDR.jpg" alt="Bright Moments mosaic banner" onerror="this.onerror=null;this.src='IMG_20240513_111051154_HDR.jpg'"></div><div class="desktop-nav"><nav class="tabs primary" aria-label="Store or gallery"><button type="button" data-section="store" aria-selected="false">Store</button><button type="button" data-section="gallery" aria-selected="true">Gallery</button></nav></div></div><main><div class="subnav"><nav class="tabs secondary" aria-label="Categories"><button type="button" data-category="art" aria-selected="true">Art</button><button type="button" data-category="coasters" aria-selected="false">Coasters</button><button type="button" data-category="mirrors" aria-selected="false">Mirrors</button><button type="button" data-category="jewelry" aria-selected="false">Jewelry</button></nav></div><section id="items" class="items" aria-label="Mosaics"></section></main><footer>Bright Moments · Handmade mosaics</footer><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script><script src="supabase-config.js"></script><script src="brand-navigation.js?v=20261027-home-edit-shortcut-1"></script><script>let products=[];
+
+/* Owner-managed store cart: prices stay on the website, Stripe handles payment. */
+.cart-toolbar{display:flex;justify-content:flex-end;margin:-28px 0 20px}
+.cart-toolbar[hidden],.cart-panel[hidden],.shop-message[hidden]{display:none!important}
+#openCart,.cart-panel button,.item .buy{border-radius:5px;cursor:pointer;font-family:var(--comic);font-weight:700}
+#openCart{background:var(--navy);color:white;border:0;padding:11px 18px;font-size:16px}
+.cart-panel{border:2px solid var(--navy);border-radius:8px;padding:18px 20px;max-width:660px;margin:0 0 28px auto;background:#fff}
+.cart-panel h2{font-size:21px;margin:0 0 13px}
+.cart-panel-list{display:flex;flex-direction:column;gap:12px}
+.cart-line{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid #e1e4ef}
+.cart-line-detail{display:flex;flex-direction:column;gap:4px}
+.cart-line button{border:1px solid var(--navy);padding:7px 10px;background:#fff;color:var(--navy);font-size:13px}
+.cart-total{font-size:19px;text-align:right;margin:16px 0}
+#cartCheckout{display:block;width:100%;background:var(--navy);color:#fff;border:0;padding:13px 16px;font-size:16px}
+#cartCheckout:disabled,.item .buy:disabled{opacity:.55;cursor:not-allowed}
+.cart-note{font-size:12px;line-height:1.5;margin:10px 0;color:var(--navy)}
+#cartMessage{min-height:1em;font-size:14px}
+.shop-message{max-width:750px;margin:0 auto 20px;padding:14px;border:1px solid var(--navy);border-radius:5px;background:#eef2fc;text-align:center}
+.item-price{margin:8px 0 0;font-size:17px;color:var(--navy)}
+.item .buy{background:var(--navy);color:#fff}
+.item .buy:not(:disabled):hover{background:#293c7c}
+</style></head><body><header><a id="brandNavigation" class="brand-link" href="./" aria-label="Bright Moments Mosaics home"><h1 class="logo">Bright Moments Mosaics</h1><p class="subtitle">Mosaic art &amp; objects</p></a></header><div class="hero"><div class="brand-banner"><img src="https://raw.githubusercontent.com/sdot61/bright-moments/main/IMG_20240513_111051154_HDR.jpg" alt="Bright Moments mosaic banner" onerror="this.onerror=null;this.src='IMG_20240513_111051154_HDR.jpg'"></div><div class="desktop-nav"><nav class="tabs primary" aria-label="Store or gallery"><button type="button" data-section="store" aria-selected="false">Store</button><button type="button" data-section="gallery" aria-selected="true">Gallery</button></nav></div></div><main><div id="cartToolbar" class="cart-toolbar" hidden><button id="openCart" type="button" aria-controls="cartPanel" aria-expanded="false">Cart (0)</button></div><aside id="cartPanel" class="cart-panel" aria-label="Shopping cart" hidden><h2>Your cart · Stripe sandbox</h2><div id="cartLines" class="cart-panel-list"></div><p id="cartTotal" class="cart-total"></p><button id="cartCheckout" type="button" disabled>Test checkout with Stripe</button><p id="cartMessage" role="status" aria-live="polite"></p><p class="cart-note">TEST MODE ONLY. No real payments are processed. Prices are verified again at checkout. Shipping and taxes are not configured.</p></aside><p id="shopReturnMessage" class="shop-message" role="status" hidden></p><div class="subnav"><nav class="tabs secondary" aria-label="Categories"><button type="button" data-category="art" aria-selected="true">Art</button><button type="button" data-category="coasters" aria-selected="false">Coasters</button><button type="button" data-category="mirrors" aria-selected="false">Mirrors</button><button type="button" data-category="jewelry" aria-selected="false">Jewelry</button></nav></div><section id="items" class="items" aria-label="Mosaics"></section></main><footer>Bright Moments · Handmade mosaics</footer><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script><script src="supabase-config.js"></script><script src="brand-navigation.js?v=20261027-home-edit-shortcut-1"></script><script>let products=[];
 const repoTree="https://api.github.com/repos/sdot61/bright-moments/git/trees/main?recursive=1";
 let categoryNames=["art","coasters","mirrors","jewelry"];
 
@@ -77,7 +98,7 @@ async function loadManagedPhotos(){
  if(records.error)throw records.error;
  return {migrated:!!settings.data?.migrated,photos:(records.data||[]).map(p=>({
  file:p.file_path.startsWith("github:")?"https://raw.githubusercontent.com/sdot61/bright-moments/main/"+p.file_path.slice(7).split("/").map(encodeURIComponent).join("/"):client.storage.from("bright-moments-images").getPublicUrl(p.file_path).data.publicUrl,
- title:p.title,category:p.category,section:p.section,managed:true
+ id:p.id,title:p.title,category:p.category,section:p.section,priceCents:p.price_cents,available:p.available,managed:true
  }))};
 }
 const items=document.getElementById("items");let section="gallery",category=null;
@@ -89,7 +110,130 @@ if(requestedSection==='store'||requestedSection==='gallery'){
   button.setAttribute('aria-selected',String(button.dataset.section===section));
  });
 }
-function render(){const shown=products.filter(p=>p.section===section&&p.category===category);items.replaceChildren();if(!shown.length){const empty=document.createElement("p");empty.className="empty";empty.textContent=section==="store"?"Store items are coming soon.":"No pieces in this selection yet.";items.append(empty);return}for(const p of shown){const article=document.createElement("article");article.className="item";const photo=document.createElement("div");photo.className="photo";const img=document.createElement("img");img.src=p.file;img.alt=p.title;img.loading="lazy";photo.append(img);const name=document.createElement("h2");name.className="item-title";name.textContent=p.title;article.append(photo,name);if(section==="store"){const buy=document.createElement("button");buy.className="buy";buy.textContent="Price TBC · Buy";buy.addEventListener("click",()=>alert("Checkout is not available yet."));article.append(buy)}items.append(article)}}document.querySelectorAll("[data-section]").forEach(button=>{const change=()=>{section=button.dataset.section;category=categoryNames[0]||null;document.querySelector(".subnav").classList.add("expanded");document.querySelectorAll("[data-section]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.section===section)));document.querySelectorAll("[data-category]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.category===category)));render()};button.addEventListener("mouseenter",change);button.addEventListener("click",change)});document.querySelectorAll("[data-category]").forEach(button=>{const change=()=>{category=button.dataset.category;document.querySelectorAll("[data-category]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.category===category)));render()};button.addEventListener("mouseenter",change);button.addEventListener("click",change)});
+function dollars(cents){return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(cents/100);}
+function canPurchase(photo){
+ return photo&&photo.section==='store'&&photo.available===true&&
+  Number.isSafeInteger(photo.priceCents)&&photo.priceCents>=50;
+}
+const CART_KEY='bright-moments-sandbox-cart-v1';
+const cartIds=new Set();
+try{
+ const stored=JSON.parse(localStorage.getItem(CART_KEY)||'[]');
+ if(Array.isArray(stored))stored.filter(id=>typeof id==='string').slice(0,10).forEach(id=>cartIds.add(id));
+}catch(error){console.warn('Cart storage unavailable',error);}
+let cartOpen=false,checkoutBusy=false;
+function saveCart(){
+ try{localStorage.setItem(CART_KEY,JSON.stringify([...cartIds]));}catch(error){console.warn('Could not save cart',error);}
+}
+function renderCart(){
+ const storeItems=new Map(products.filter(canPurchase).map(p=>[p.id,p]));
+ for(const id of [...cartIds])if(!storeItems.has(id))cartIds.delete(id);
+ saveCart();
+ const cartButton=document.getElementById('openCart');
+ const panel=document.getElementById('cartPanel');
+ const isStore=section==='store';
+ document.getElementById('cartToolbar').hidden=!isStore;
+ cartButton.textContent='Cart ('+cartIds.size+')';
+ cartButton.setAttribute('aria-expanded',String(isStore&&cartOpen));
+ panel.hidden=!isStore||!cartOpen;
+ const list=document.getElementById('cartLines');
+ list.replaceChildren();
+ let total=0;
+ for(const id of cartIds){
+  const p=storeItems.get(id);
+  if(!p)continue;
+  total+=p.priceCents;
+  const line=document.createElement('div');line.className='cart-line';
+  const details=document.createElement('div');details.className='cart-line-detail';
+  const title=document.createElement('strong');title.textContent=p.title;
+  const price=document.createElement('span');price.textContent=dollars(p.priceCents);
+  details.append(title,price);
+  const remove=document.createElement('button');remove.type='button';remove.textContent='Remove';
+  remove.setAttribute('aria-label','Remove '+p.title+' from cart');
+  remove.addEventListener('click',()=>{cartIds.delete(id);renderCart();render();});
+  line.append(details,remove);list.append(line);
+ }
+ if(!cartIds.size){
+  const empty=document.createElement('p');empty.textContent='Your cart is empty.';
+  list.append(empty);
+ }
+ document.getElementById('cartTotal').textContent='Subtotal: '+dollars(total);
+ document.getElementById('cartCheckout').disabled=!cartIds.size||checkoutBusy;
+}
+function addToCart(photo){
+ if(!canPurchase(photo))return;
+ if(cartIds.size>=10&&!cartIds.has(photo.id)){
+  document.getElementById('cartMessage').textContent='A maximum of 10 pieces can be checked out at once.';
+  cartOpen=true;renderCart();return;
+ }
+ cartIds.add(photo.id);
+ cartOpen=true;
+ document.getElementById('cartMessage').textContent='';
+ renderCart();render();
+}
+document.getElementById('openCart').addEventListener('click',()=>{
+ cartOpen=!cartOpen;
+ renderCart();
+});
+document.getElementById('cartCheckout').addEventListener('click',async()=>{
+ if(checkoutBusy||!cartIds.size)return;
+ checkoutBusy=true;renderCart();
+ const msg=document.getElementById('cartMessage');
+ msg.textContent='Preparing Stripe sandbox checkout…';
+ try{
+  const config=window.BRIGHT_MOMENTS_SUPABASE||{};
+  if(!config.url||!config.publishableKey)throw Error('Store connection is not configured.');
+  const request=await fetch(config.url+'/functions/v1/bright-moments-sandbox-checkout',{
+   method:'POST',
+   headers:{'Content-Type':'application/json','apikey':config.publishableKey},
+   body:JSON.stringify({ids:[...cartIds]})
+  });
+  const result=await request.json().catch(()=>({}));
+  if(!request.ok)throw Error(result.error||'Unable to start test checkout.');
+  if(result.mode!=='test'||!result.url?.startsWith('https://checkout.stripe.com/'))
+   throw Error('Stripe did not return a valid sandbox checkout.');
+  window.location.assign(result.url);
+ }catch(error){msg.textContent=error.message||'Sandbox checkout unavailable.';}
+ finally{checkoutBusy=false;renderCart();}
+});
+const checkoutReturn=new URLSearchParams(location.search).get('checkout');
+if(checkoutReturn==='returned'||checkoutReturn==='cancelled'){
+ const notification=document.getElementById('shopReturnMessage');
+ notification.hidden=false;
+ notification.textContent=checkoutReturn==='returned'
+  ?'You returned from Stripe test checkout. Confirm payment status in the Stripe sandbox dashboard; this page does not verify payment.'
+  :'Test checkout was cancelled. Nothing was charged.';
+}
+function render(){
+ const shown=products.filter(p=>p.section===section&&p.category===category);
+ items.replaceChildren();
+ if(!shown.length){
+  const empty=document.createElement('p');empty.className='empty';
+  empty.textContent=section==='store'?'Store items are coming soon.':'No pieces in this selection yet.';
+  items.append(empty);
+ }
+ for(const p of shown){
+  const article=document.createElement('article');article.className='item';
+  const photo=document.createElement('div');photo.className='photo';
+  const img=document.createElement('img');img.src=p.file;img.alt=p.title;img.loading='lazy';
+  photo.append(img);
+  const name=document.createElement('h2');name.className='item-title';name.textContent=p.title;
+  article.append(photo,name);
+  if(section==='store'){
+   const price=document.createElement('p');price.className='item-price';
+   price.textContent=Number.isSafeInteger(p.priceCents)&&p.priceCents>=50?dollars(p.priceCents):'Price coming soon';
+   article.append(price);
+   const buy=document.createElement('button');buy.type='button';buy.className='buy';
+   buy.disabled=!canPurchase(p);
+   buy.textContent=!canPurchase(p)?'Not available':cartIds.has(p.id)?'In cart · Add again?':'Add to cart';
+   buy.addEventListener('click',()=>addToCart(p));
+   article.append(buy);
+  }
+  items.append(article);
+ }
+ renderCart();
+}
+document.querySelectorAll("[data-section]").forEach(button=>{const change=()=>{section=button.dataset.section;category=categoryNames[0]||null;document.querySelector(".subnav").classList.add("expanded");document.querySelectorAll("[data-section]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.section===section)));document.querySelectorAll("[data-category]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.category===category)));render()};button.addEventListener("mouseenter",change);button.addEventListener("click",change)});document.querySelectorAll("[data-category]").forEach(button=>{const change=()=>{category=button.dataset.category;document.querySelectorAll("[data-category]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.category===category)));render()};button.addEventListener("mouseenter",change);button.addEventListener("click",change)});
 const liveGalleryChannel=typeof BroadcastChannel==='function'?new BroadcastChannel('bright-moments-gallery'):null;
 let galleryReloadTask=null;
 function queueGalleryReload(){
